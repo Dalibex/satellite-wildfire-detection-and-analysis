@@ -1,0 +1,43 @@
+# --- Entorno virtual y Python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- Tests y herramientas ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Datos del reto (pesados y/o de terceros: no se suben) ---
+# Las imágenes viven en images/ y los resultados se generan en resultados/.
+images/*
+!images/.gitkeep
+resultados/
+out/
+samples_*
+
+# --- Salidas generadas ---
+*.geojson
+informe.json
+diagnostico.png
+resultado.png
+mascara_*.png
+descripcion.txt
+
+# --- Editores y sistema ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Paquetes comprimidos ---
+*.zip
