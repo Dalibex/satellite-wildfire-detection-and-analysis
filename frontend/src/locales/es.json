@@ -1,5 +1,18 @@
 {
   "notification": { "title": "Notificaciones" },
+  "viewerControls": {
+    "panHelp": "Amplía la imagen y arrastra con el ratón para desplazarla. También puedes usar las flechas del teclado, incluido el comparador.",
+    "lineThickness": "Grosor de líneas",
+    "resetLineThickness": "Restablecer grosor",
+    "lineThicknessHelp": "Ajuste visual de contornos y símbolos. Se conserva al exportar.",
+    "smokeDirection": "Dirección estimada del humo",
+    "smokeDirectionLoading": "Preparando la dirección del humo…",
+    "smokeDirectionFailed": "No se pudieron cargar las máscaras para estimar la dirección. Las demás capas siguen disponibles.",
+    "smokeDirectionValue": "Humo hacia {{direction}}.",
+    "smokeDirectionHelp": "Se estima desde el quemado hacia el humo de confianza alta.",
+    "smokeDirectionUnavailable": "No hay suficiente humo o separación respecto al quemado para estimar una dirección."
+  },
+  "smokeDirections": { "n": "el norte", "ne": "el noreste", "e": "el este", "se": "el sureste", "s": "el sur", "sw": "el suroeste", "w": "el oeste", "nw": "el noroeste" },
   "diagnostics": {
     "title": "Imágenes enviadas al análisis",
     "resolution": "Resolución enviada: {{value}} px",

@@ -47,3 +47,23 @@ Si la API rechaza un trabajo, el frontend muestra las imágenes enviadas, su res
 - `masks/` contiene PNG binarios: blanco (255) identifica la categoría y negro (0) identifica el resto.
 - El PNG del resultado conserva la base y las capas visibles al iniciar la descarga.
 - Si falta un recurso, la descarga ZIP falla completa. Se puede reintentar desde el mismo botón.
+
+## Controles del visor
+
+- El grosor de líneas se ajusta entre 50 y 300 %. Modifica contornos y símbolos, sin alterar las tramas ni las máscaras.
+- El arrastre con el ratón desplaza la imagen cuando existe contenido fuera del visor. El teclado y los gestos táctiles conservan su funcionamiento.
+- La flecha de humo es una capa opcional. Se estima desde el centro del quemado hacia el centro del humo de confianza alta.
+  Usa las máscaras a una resolución de muestreo máxima de 512 px y se oculta si los centros apenas se separan.
+- El PNG, el PDF y el ZIP conservan el grosor y la visibilidad de la flecha al iniciar la descarga.
+- El ZIP también incluye la flecha como SVG cuando existe, aunque esté oculta en la imagen.
+- La escena se dibuja con un lado mayor máximo de 1800 px y conserva la proporción. El PNG añade la leyenda aparte.
+  Las máscaras mantienen la resolución de análisis.
+
+Para comprobar el visor y las exportaciones con Firefox, instala el navegador y selecciona el proyecto mediante la variable de entorno:
+
+```powershell
+npx playwright install firefox
+$env:FIREWATCH_BROWSER = 'firefox'
+npx playwright test viewer-controls.spec.ts
+Remove-Item Env:FIREWATCH_BROWSER
+```

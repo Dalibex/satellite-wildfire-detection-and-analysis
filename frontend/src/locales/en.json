@@ -1,5 +1,18 @@
 {
   "notification": { "title": "Notifications" },
+  "viewerControls": {
+    "panHelp": "Zoom in and drag with the mouse to pan. You can also use arrow keys, including on the comparison slider.",
+    "lineThickness": "Line thickness",
+    "resetLineThickness": "Reset line thickness",
+    "lineThicknessHelp": "Visual adjustment for outlines and symbols. Exports retain this setting.",
+    "smokeDirection": "Estimated smoke direction",
+    "smokeDirectionLoading": "Preparing smoke direction…",
+    "smokeDirectionFailed": "The masks for estimating direction could not load. The other layers remain available.",
+    "smokeDirectionValue": "Smoke toward {{direction}}.",
+    "smokeDirectionHelp": "Estimated from the burned area toward high-confidence smoke.",
+    "smokeDirectionUnavailable": "There is insufficient smoke or separation from the burned area to estimate a direction."
+  },
+  "smokeDirections": { "n": "north", "ne": "northeast", "e": "east", "se": "southeast", "s": "south", "sw": "southwest", "w": "west", "nw": "northwest" },
   "diagnostics": {
     "title": "Images submitted for analysis",
     "resolution": "Submitted resolution: {{value}} px",

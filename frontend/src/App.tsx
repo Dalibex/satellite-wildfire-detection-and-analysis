@@ -36,8 +36,7 @@ export default function App() {
   const startController = useRef<AbortController | null>(null);
   const running = starting || job?.status === 'queued' || job?.status === 'running';
   const valid = assignmentsValid(images);
-  const jobId = job?.id;
-  const jobStatus = job?.status;
+  const pollingJobId = job?.status === 'queued' || job?.status === 'running' ? job.id : null;
 
   function notify(key: string, isError = false) { setNotice({ id: Date.now(), key, error: isError }); setPaused(false); }
   function fail(cause: unknown) {
@@ -68,12 +67,12 @@ export default function App() {
   useEffect(() => () => { uploadController.current?.abort(); startController.current?.abort(); }, []);
 
   useEffect(() => {
-    if (!jobId || (jobStatus !== 'queued' && jobStatus !== 'running')) return;
+    if (!pollingJobId) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        const next = await getAnalysis(jobId!, controller.signal);
+        const next = await getAnalysis(pollingJobId!, controller.signal);
         if (controller.signal.aborted) return;
         setJob(next); setPollError(false);
         if (next.status === 'completed') { setNotice({ id: Date.now(), key: 'result.ready', error: false }); return; }
@@ -93,7 +92,7 @@ export default function App() {
     }
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [jobId, jobStatus, retry]);
+  }, [pollingJobId, retry]);
 
   async function addFiles(files: File[]) {
     if (!files.length || running || uploading) return;

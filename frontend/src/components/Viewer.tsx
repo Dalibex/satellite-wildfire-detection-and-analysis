@@ -5,6 +5,10 @@ import { Expand, Layers, ZoomIn, ZoomOut } from 'lucide-react';
 import { assetUrl } from '../api';
 import { compositionNames, layerColors, layerKeys } from '../domain';
 import type { AnalysisResult, Composition, Hotspot, LayerVisibility } from '../domain';
+import type { SmokeArrow } from '../smoke-direction';
+import { MAX_LINE_SCALE, MIN_LINE_SCALE } from '../layer-rendering';
+import LayerImage from './LayerImage';
+import SmokeDirectionLayer from './SmokeDirectionLayer';
 
 interface Props {
   result: AnalysisResult;
@@ -15,16 +19,25 @@ interface Props {
   onVisible: (visible: LayerVisibility) => void;
   opacity: number;
   onOpacity: (value: number) => void;
+  lineScale: number;
+  onLineScale: (value: number) => void;
+  smokeArrow: SmokeArrow | null;
+  smokeArrowLoading: boolean;
+  smokeArrowError: boolean;
+  showSmokeArrow: boolean;
+  onShowSmokeArrow: (visible: boolean) => void;
   selected: Hotspot | null;
 }
 
-export default function Viewer({ result, jobId, base, onBase, visible, onVisible, opacity, onOpacity, selected }: Props) {
+export default function Viewer({ result, jobId, base, onBase, visible, onVisible, opacity, onOpacity, lineScale, onLineScale, smokeArrow, smokeArrowLoading, smokeArrowError, showSmokeArrow, onShowSmokeArrow, selected }: Props) {
   const { t, i18n } = useTranslation();
   const [zoom, setZoom] = useState(1);
   const [compare, setCompare] = useState(false);
   const [divider, setDivider] = useState(50);
   const [simulation, setSimulation] = useState('normal');
   const [imageError, setImageError] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ id: number; x: number; y: number; left: number; top: number } | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const report = result.report;
@@ -56,18 +69,40 @@ export default function Viewer({ result, jobId, base, onBase, visible, onVisible
         <filter id="tritanopia"><feColorMatrix type="matrix" values=".95 .05 0 0 0 0 .433 .567 0 0 0 .475 .525 0 0 0 0 0 1 0" /></filter>
       </defs></svg>
       <figure className="image-figure">
-        <div ref={viewport} className="image-viewport" tabIndex={0} role="region" aria-label={t('result.viewer')} aria-describedby="viewer-help result-description">
+        <div ref={viewport} className={`image-viewport ${dragging ? 'is-panning' : ''}`} tabIndex={0} role="region" aria-label={t('result.viewer')} aria-describedby="viewer-help result-description"
+          onPointerDown={event => {
+            if (event.button !== 0 || event.pointerType === 'touch') return;
+            const element = event.currentTarget;
+            if (element.scrollWidth <= element.clientWidth && element.scrollHeight <= element.clientHeight) return;
+            const bounds = element.getBoundingClientRect();
+            if (event.clientX >= bounds.left + element.clientWidth || event.clientY >= bounds.top + element.clientHeight) return;
+            drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, left: element.scrollLeft, top: element.scrollTop };
+            element.setPointerCapture(event.pointerId);
+            element.focus({ preventScroll: true });
+            setDragging(true);
+            event.preventDefault();
+          }}
+          onPointerMove={event => {
+            if (!drag.current || drag.current.id !== event.pointerId) return;
+            event.currentTarget.scrollLeft = drag.current.left - (event.clientX - drag.current.x);
+            event.currentTarget.scrollTop = drag.current.top - (event.clientY - drag.current.y);
+          }}
+          onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); drag.current = null; setDragging(false); }}
+          onPointerCancel={() => { drag.current = null; setDragging(false); }}
+          onLostPointerCapture={() => { drag.current = null; setDragging(false); }}
+          onDragStart={event => event.preventDefault()}>
           <div className="image-stack" style={{ width: `${zoom * 100}%`, filter: simulation === 'normal' ? undefined : `url(#${simulation})` }}>
             <img ref={image} className="base-image" src={assetUrl(jobId, result.bases[base] ?? result.bases.swir ?? result.bases.truecolor ?? result.bases.wildfire ?? '')} width={report.width} height={report.height}
-              alt={t('description.alt', { pixels: nf.format(report.burned_pixels), count: report.hotspots.length })} onError={() => setImageError(true)} />
+              alt={t('description.alt', { pixels: nf.format(report.burned_pixels), count: report.hotspots.length })} draggable={false} onError={() => setImageError(true)} />
             <div className="overlay-stack" style={{ opacity, clipPath: compare ? `inset(0 0 0 ${divider}%)` : undefined }}>
-              {layerKeys.filter(key => visible[key]).map(key => <img key={key} className="image-layer" src={assetUrl(jobId, result.layers[key].file)} alt="" aria-hidden="true" onError={() => setImageError(true)} />)}
+              {layerKeys.filter(key => visible[key]).map(key => <LayerImage key={key} layer={key} url={assetUrl(jobId, result.layers[key].file)} lineScale={lineScale} onError={setImageError} />)}
+              {showSmokeArrow && smokeArrow && <SmokeDirectionLayer arrow={smokeArrow} width={report.width} height={report.height} lineScale={lineScale} />}
             </div>
             {selected && <svg className="selection-overlay" viewBox={`0 0 ${report.width} ${report.height}`} aria-hidden="true"><circle cx={selected.centroid_xy[0]} cy={selected.centroid_xy[1]} r={Math.max(16, report.width / 45)} fill="none" stroke="#fff" strokeWidth={6} /><circle cx={selected.centroid_xy[0]} cy={selected.centroid_xy[1]} r={Math.max(16, report.width / 45)} fill="none" stroke="#000" strokeWidth={3} strokeDasharray="5 4" /></svg>}
             {compare && <><div className="compare-line" style={{ left: `${divider}%` }} /><span className="image-label original-label">{t('result.original')}</span><span className="image-label result-label">{t('result.processed')}</span></>}
           </div>
         </div>
-        <figcaption className="small muted" id="viewer-help">{t('result.scrollHelp')}</figcaption>
+        <figcaption className="small muted" id="viewer-help">{t('viewerControls.panHelp')}</figcaption>
       </figure>
       {imageError && <p className="alert alert-danger" role="alert">{t('result.previewError')}</p>}
       <div className="comparison-controls"><Form.Check type="switch" role="switch" id="compare" label={t('result.compare')} checked={compare} onChange={event => setCompare(event.target.checked)} />
@@ -76,7 +111,7 @@ export default function Viewer({ result, jobId, base, onBase, visible, onVisible
     </div>
     <aside className="layer-panel" aria-labelledby="layers-title">
       <h3 id="layers-title"><Layers size={18} aria-hidden="true" /> {t('result.layers')}</h3>
-      <div className="layer-shortcuts"><button type="button" onClick={() => onVisible(Object.fromEntries(layerKeys.map(key => [key, true])) as LayerVisibility)}>{t('result.showAll')}</button><button type="button" onClick={() => onVisible(Object.fromEntries(layerKeys.map(key => [key, false])) as LayerVisibility)}>{t('result.hideAll')}</button></div>
+      <div className="layer-shortcuts"><button type="button" onClick={() => { onVisible(Object.fromEntries(layerKeys.map(key => [key, true])) as LayerVisibility); onShowSmokeArrow(true); }}>{t('result.showAll')}</button><button type="button" onClick={() => { onVisible(Object.fromEntries(layerKeys.map(key => [key, false])) as LayerVisibility); onShowSmokeArrow(false); }}>{t('result.hideAll')}</button></div>
       <fieldset><legend className="visually-hidden">{t('result.layers')}</legend>
         {layerKeys.map(key => <div className="layer-control" key={key}>
           <Form.Check id={`layer-${key}`} checked={visible[key]} onChange={event => onVisible({ ...visible, [key]: event.target.checked })}
@@ -84,8 +119,19 @@ export default function Viewer({ result, jobId, base, onBase, visible, onVisible
           {result.layers[key].count === 0 && <small className="muted empty-layer">{t('result.emptyLayer')}</small>}
         </div>)}
       </fieldset>
+      <Form.Check id="smoke-direction" checked={showSmokeArrow && (smokeArrowLoading || !!smokeArrow)} disabled={!smokeArrow && !smokeArrowLoading} aria-describedby="smoke-direction-help" onChange={event => onShowSmokeArrow(event.target.checked)}
+        label={<><span className="arrow-swatch" aria-hidden="true">➜</span>{t('viewerControls.smokeDirection')}</>} />
+      <p id="smoke-direction-help" className="small muted smoke-direction-help">
+        {smokeArrowLoading ? t('viewerControls.smokeDirectionLoading') : smokeArrowError ? t('viewerControls.smokeDirectionFailed') : smokeArrow
+          ? `${t('viewerControls.smokeDirectionValue', { direction: t(`smokeDirections.${smokeArrow.direction}`) })} ${t('viewerControls.smokeDirectionHelp')}`
+          : t('viewerControls.smokeDirectionUnavailable')}
+      </p>
       <p className="small muted front-note">{t('result.frontHelp')}</p>
       <Form.Group controlId="layer-opacity"><Form.Label className="small">{t('result.opacity')}: {nf.format(Math.round(opacity * 100))}%</Form.Label><Form.Range min={10} max={100} value={opacity * 100} onChange={event => onOpacity(Number(event.target.value) / 100)} /></Form.Group>
+      <Form.Group controlId="line-thickness" className="mt-3"><div className="range-heading"><Form.Label className="small">{t('viewerControls.lineThickness')}: {nf.format(Math.round(lineScale * 100))}%</Form.Label><button type="button" className="range-reset" disabled={lineScale === 1} onClick={() => onLineScale(1)}>{t('viewerControls.resetLineThickness')}</button></div>
+        <Form.Range min={MIN_LINE_SCALE * 100} max={MAX_LINE_SCALE * 100} step={10} value={lineScale * 100} aria-describedby="line-thickness-help" onChange={event => onLineScale(Number(event.target.value) / 100)} />
+        <Form.Text id="line-thickness-help">{t('viewerControls.lineThicknessHelp')}</Form.Text>
+      </Form.Group>
       <Form.Group controlId="simulation" className="mt-3"><Form.Label className="small">{t('result.simulation')}</Form.Label><Form.Select size="sm" value={simulation} aria-describedby="simulation-help" onChange={event => setSimulation(event.target.value)}>
         {['normal', 'protanopia', 'deuteranopia', 'tritanopia'].map(value => <option key={value} value={value}>{t(`result.${value}`)}</option>)}
       </Form.Select><Form.Text id="simulation-help">{t('result.simulationHelp')}</Form.Text></Form.Group>

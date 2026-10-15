@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from 'react-bootstrap';
 import { CheckCircle2, ChevronDown, Copy, Crosshair, Info, ScanLine, ShieldCheck } from 'lucide-react';
@@ -7,6 +7,8 @@ import type { AnalysisResult, Composition, Hotspot } from '../domain';
 import Viewer from './Viewer';
 import ExportPanel from './ExportPanel';
 import { describeReport } from '../exports';
+import { estimateSmokeArrow } from '../smoke-direction';
+import type { SmokeArrow } from '../smoke-direction';
 
 interface Props { result: AnalysisResult; jobId: string; notify: (key: string, error?: boolean) => void }
 
@@ -15,10 +17,27 @@ export default function Results({ result, jobId, notify }: Props) {
   const [base, setBase] = useState<Composition>(result.bases.truecolor ? 'truecolor' : result.bases.swir ? 'swir' : 'wildfire');
   const [visible, setVisible] = useState({ ...defaultLayers });
   const [opacity, setOpacity] = useState(1);
+  const [lineScale, setLineScale] = useState(1);
+  const [smokeArrow, setSmokeArrow] = useState<SmokeArrow | null>(null);
+  const [smokeArrowLoading, setSmokeArrowLoading] = useState(true);
+  const [smokeArrowError, setSmokeArrowError] = useState(false);
+  const [showSmokeArrow, setShowSmokeArrow] = useState(true);
   const [selected, setSelected] = useState<Hotspot | null>(null);
   const report = result.report;
   const nf = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 });
   const description = describeReport(report, t, nf);
+  useEffect(() => {
+    const controller = new AbortController();
+    setSmokeArrowLoading(true);
+    setSmokeArrowError(false);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]);
+    void estimateSmokeArrow(jobId, result, signal).then(arrow => {
+      if (!controller.signal.aborted) { setSmokeArrow(arrow); setSmokeArrowLoading(false); }
+    }).catch(() => {
+      if (!controller.signal.aborted) { setSmokeArrow(null); setSmokeArrowLoading(false); setSmokeArrowError(true); }
+    });
+    return () => controller.abort();
+  }, [jobId, result]);
   const metrics = [
     { name: 'burned', value: nf.format(report.burned_pixels), unit: t('metrics.pixelArea'), detail: t('metrics.percent', { value: nf.format(report.burned_percent) }) },
     { name: 'range', value: `${nf.format(report.strict_pixels)}–${nf.format(report.burned_pixels + report.probable_pixels)}`, unit: t('metrics.pixelArea'), detail: t('metrics.rangeHelp') },
@@ -43,7 +62,7 @@ export default function Results({ result, jobId, notify }: Props) {
   return <section className="results-area" aria-labelledby="results-title">
     <div className="result-heading"><div><p className="eyebrow">{t('result.step')}</p><h2 id="results-title">{t('result.title')}</h2></div><span className={`result-status ${report.detected ? '' : 'neutral-status'}`}><CheckCircle2 size={16} aria-hidden="true" />{t(report.detected ? 'result.detected' : 'result.notDetected')}</span></div>
     <p className="small muted result-resolution"><ScanLine size={15} aria-hidden="true" /> {t('result.resolution', report)}</p>
-    <div className="surface viewer-surface"><Viewer result={result} jobId={jobId} base={base} onBase={setBase} visible={visible} onVisible={setVisible} opacity={opacity} onOpacity={setOpacity} selected={selected} /></div>
+    <div className="surface viewer-surface"><Viewer result={result} jobId={jobId} base={base} onBase={setBase} visible={visible} onVisible={setVisible} opacity={opacity} onOpacity={setOpacity} lineScale={lineScale} onLineScale={setLineScale} smokeArrow={smokeArrow} smokeArrowLoading={smokeArrowLoading} smokeArrowError={smokeArrowError} showSmokeArrow={showSmokeArrow} onShowSmokeArrow={setShowSmokeArrow} selected={selected} /></div>
     <section className="metrics-section" aria-labelledby="metrics-title"><h3 id="metrics-title">{t('metrics.title')}</h3><dl className="metrics-grid">
       {metrics.map(metric => <div className="surface metric-card" key={metric.name}><dt>{t(`metrics.${metric.name}`)}</dt><dd className="metric-value">{metric.value} <span>{metric.unit}</span></dd><dd className="metric-detail">{metric.detail}</dd></div>)}
     </dl><p className="small muted">{t('metrics.imagePixels')} {t('metrics.water')}: <strong>{nf.format(report.water_inside_pixels)} px</strong>.</p></section>
@@ -55,6 +74,6 @@ export default function Results({ result, jobId, notify }: Props) {
       {report.hotspots.length ? hotspotTable(report.hotspots) : <p className="empty-state"><Crosshair size={22} aria-hidden="true" />{t('hotspots.empty')}</p>}
       {report.rejected_hotspots.length > 0 && <details className="mt-3"><summary>{t('hotspots.rejected')} ({nf.format(report.rejected_hotspots.length)})</summary>{hotspotTable(report.rejected_hotspots, true)}</details>}
     </div></details></section>
-    <ExportPanel jobId={jobId} result={result} base={base} visible={visible} opacity={opacity} notify={notify} />
+    <ExportPanel jobId={jobId} result={result} base={base} visible={visible} opacity={opacity} lineScale={lineScale} smokeArrow={smokeArrow} showSmokeArrow={showSmokeArrow} smokeArrowLoading={smokeArrowLoading} notify={notify} />
   </section>;
 }

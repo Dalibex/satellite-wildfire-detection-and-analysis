@@ -158,8 +158,9 @@ progress::-moz-progress-bar { background: #17624d; }
 .zoom-controls output { font-size: .65rem; padding: 0 3px; min-width: 39px; text-align: center; }
 .zoom-controls .btn { min-width: 34px; width: 34px; min-height: 36px; }
 .image-figure { margin: 0; }
-.image-viewport { overflow: auto; max-height: 660px; background: #1d2420; min-height: 200px; }
-.image-stack { position: relative; min-width: 100%; }
+.image-viewport { overflow: auto; max-height: 660px; background: #1d2420; min-height: 200px; cursor: grab; touch-action: pan-x pan-y pinch-zoom; }
+.image-viewport.is-panning { cursor: grabbing; }
+.image-stack { position: relative; min-width: 100%; user-select: none; }
 .base-image { width: 100%; height: auto; display: block; }
 .image-layer, .overlay-stack, .selection-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .image-label { position: absolute; top: 12px; padding: 4px 8px; background: #111c18e8; border-radius: 4px; color: #fff; font-size: .65rem; }
@@ -183,6 +184,12 @@ progress::-moz-progress-bar { background: #17624d; }
 .swatch-perimeter, .swatch-front { height: 5px; }
 .empty-layer { display: block; margin: -3px 0 2px 26px; font-size: .61rem; }
 .front-note { font-size: .64rem; margin-top: 10px; border-top: 1px solid var(--fw-border); padding-top: 10px; }
+.range-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.range-heading .form-label { margin: 0; }
+.range-reset { padding: 3px 0; min-height: 28px; border: 0; background: none; color: var(--fw-accent); font-size: .65rem; text-decoration: underline; }
+.range-reset:disabled { color: var(--fw-muted); text-decoration: none; }
+.arrow-swatch { display: inline-block; margin-right: 6px; color: #56B4E9; font-weight: 700; text-shadow: -1px 0 #000, 0 1px #000, 1px 0 #000, 0 -1px #000; }
+.smoke-direction-help { font-size: .64rem; margin: 5px 0 10px; }
 .filter-definitions { position: absolute; width: 0; height: 0; overflow: hidden; }
 .metrics-section { margin-top: 24px; }
 .metrics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
