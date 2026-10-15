@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from ..composition import guess_composition
 from ..config import Params
@@ -44,12 +44,23 @@ class UploadInfo(BaseModel):
 
 class AnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    swir: str
+    swir: str | None = None
     truecolor: str | None = None
     wildfire: str | None = None
     max_side: Literal[1000, 1600, 2500] = 2500
     smoke_recovery: bool = True
     sensitivity: Literal["conservative", "balanced", "sensitive"] = "balanced"
+
+    @model_validator(mode="after")
+    def require_detection_image(self) -> AnalysisRequest:
+        """Rejects reference-only requests before they enter the analysis queue.
+
+        Raises:
+            ValueError: If neither SWIR nor True Color is assigned.
+        """
+        if not self.swir and not self.truecolor:
+            raise ValueError("A SWIR or True Color image is required for detection.")
+        return self
 
 
 class JobResponse(BaseModel):
@@ -95,7 +106,8 @@ class ImageService:
             elif options.sensitivity == "sensitive":
                 params.burn.hyst_high, params.burn.hyst_low = 0.44, 0.25
             analysis = analyze(
-                *paths, params=params, max_side=options.max_side,
+                swir_path=paths[0], truecolor_path=paths[1], reference_path=paths[2],
+                params=params, max_side=options.max_side, auto_assign=False,
                 on_progress=lambda stage: self._update(job_id, stage=stage),
             )
             self._update(job_id, stage="exports")
@@ -204,7 +216,7 @@ def create_app(data_dir: Path | None = None, max_upload_bytes: int = 100 * 1024 
     @api.post("/api/analyses", response_model=JobResponse, status_code=202,
               summary="Queue image analysis", responses=ERRORS)
     def start(request: Request, options: AnalysisRequest) -> JobResponse:
-        """Queues one analysis with SWIR and optional companion compositions.
+        """Queues detection from SWIR or True Color, with optional validation reference.
 
         Raises:
             HTTPException: If an upload is missing or assigned more than once.

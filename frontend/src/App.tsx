@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Button, Form, Spinner, Toast, ToastContainer } from 'react-bootstrap';
 import { ArrowDownToLine, ArrowRight, Check, CheckCircle2, CircleAlert, Flame, ImagePlus, Languages, Paintbrush, ScanLine, Sparkles } from 'lucide-react';
 import { ApiError, getAnalysis, startAnalysis, uploadImage } from './api';
-import { assignmentsValid, stages } from './domain';
+import { assignmentsValid, compositionNames, MAX_INPUT_IMAGES, stages } from './domain';
 import type { AnalysisOptions, Job, UploadedImage } from './domain';
 import UploadPanel from './components/UploadPanel';
 import Results from './components/Results';
+import { assignUploadedImage } from './input-images';
 
 type Theme = 'light' | 'dark' | 'system' | 'contrast';
 interface Notice { id: number; key: string; error: boolean }
@@ -28,6 +29,8 @@ export default function App() {
   const [pollError, setPollError] = useState(false);
   const [retry, setRetry] = useState(0);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [submittedImages, setSubmittedImages] = useState<UploadedImage[]>([]);
+  const [submittedOptions, setSubmittedOptions] = useState<AnalysisOptions>({ max_side: 2500 });
   const [paused, setPaused] = useState(false);
   const uploadController = useRef<AbortController | null>(null);
   const startController = useRef<AbortController | null>(null);
@@ -79,6 +82,11 @@ export default function App() {
       } catch (cause) {
         if (!controller.signal.aborted) {
           if (cause instanceof ApiError && cause.code === 'job_not_found') { setError('errors.job_not_found'); setJob(null); }
+          else if (cause instanceof ApiError && cause.code === 'invalid_response') {
+            setError('errors.invalid_response');
+            setJob(current => current ? { ...current, status: 'failed', stage: 'failed', error: 'invalid_response' } : null);
+            setPollError(false);
+          }
           else setPollError(true);
         }
       }
@@ -89,6 +97,7 @@ export default function App() {
 
   async function addFiles(files: File[]) {
     if (!files.length || running || uploading) return;
+    if (images.length + files.length > MAX_INPUT_IMAGES) { fail(new ApiError('too_many_images')); return; }
     const controller = new AbortController();
     uploadController.current = controller;
     setUploading(true); setError(null);
@@ -96,7 +105,7 @@ export default function App() {
     for (const file of files) {
       try {
         const uploaded = await uploadImage(file, controller.signal);
-        setImages(current => [...current, { ...uploaded, assignment: current.some(image => image.assignment === uploaded.detected) ? 'unused' : uploaded.detected }]);
+        setImages(current => [...current, assignUploadedImage(uploaded)]);
       } catch (cause) { failed = true; fail(cause); if (controller.signal.aborted) break; }
     }
     setUploading(false);
@@ -107,13 +116,16 @@ export default function App() {
     if (!valid || running || uploading) return;
     const controller = new AbortController(); startController.current = controller;
     setStarting(true); setError(null); setPollError(false);
+    setSubmittedImages(images.map(image => ({ ...image })));
+    setSubmittedOptions({ ...options });
     try { setJob(await startAnalysis(images, options, controller.signal)); }
     catch (cause) { fail(cause); }
     finally { setStarting(false); }
   }
 
   const stageIndex = Math.max(0, stages.findIndex(stage => stage === job?.stage));
-  const noImages = !images.some(image => image.assignment !== 'unused');
+  const noImages = !images.some(image => image.assignment === 'swir' || image.assignment === 'truecolor');
+  const needsType = images.some(image => image.assignment === 'unused');
   return <>
     <a className="skip-link" href="#main">{t('app.skip')}</a>
     <header className="app-header"><div className="app-container header-inner">
@@ -128,9 +140,13 @@ export default function App() {
       <section className="hero" aria-labelledby="page-title"><div className="hero-copy"><h1 id="page-title">{t('intro.title')}</h1><p>{t('intro.body')}</p></div><div className="hero-mark" aria-hidden="true"><ScanLine size={116} strokeWidth={0.65} /><span className="hero-cross">＋</span></div></section>
       <ol className="workflow" aria-label={t('app.title')}><li className={images.length ? 'complete' : 'current'}><span>{images.length ? <Check size={16} aria-hidden="true" /> : '01'}</span><ImagePlus size={17} aria-hidden="true" />{t('intro.step1')}</li><li className={running ? 'current' : job?.status === 'completed' ? 'complete' : ''}><span>02</span><Sparkles size={17} aria-hidden="true" />{t('intro.step2')}</li><li className={job?.status === 'completed' ? 'current' : ''}><span>03</span><ArrowDownToLine size={17} aria-hidden="true" />{t('intro.step3')}</li></ol>
       <div className={`workspace ${job?.status === 'completed' ? 'has-results' : ''}`}>
-        <div className="preparation-column"><UploadPanel images={images} uploading={uploading} running={running} options={options} onFiles={files => { void addFiles(files); }} onAssign={(id, assignment) => setImages(current => current.map(image => image.id === id ? { ...image, assignment } : image))} onRemove={id => setImages(current => current.filter(image => image.id !== id))} onOptions={setOptions} />
-          <div className="analyze-action"><Button size="lg" className="analyze-button" disabled={!valid || running || uploading} aria-describedby="analysis-help" onClick={() => { void analyze(); }}>{running ? <Spinner as="span" size="sm" aria-hidden="true" /> : <Sparkles size={18} aria-hidden="true" />}{t(running ? 'settings.running' : job ? 'settings.again' : 'settings.analyze')}<ArrowRight size={19} aria-hidden="true" /></Button><p id="analysis-help" className={`small ${!valid && images.length ? 'validation-note' : 'muted'}`}>{!valid ? t(noImages ? 'upload.missing' : 'upload.duplicate') : t('settings.imageOnly')}</p></div>
-          {error && <div className="alert alert-danger persistent-error"><strong>{t('errors.heading')}</strong><p className="mb-0 mt-1">{t(error)}</p></div>}
+        <div className="preparation-column"><UploadPanel images={images} uploading={uploading} running={running} options={options} onFiles={files => { void addFiles(files); }} onAssign={(id, assignment) => setImages(current => current.map(image => image.id === id ? { ...image, assignment, assignmentSource: 'manual' } : image))} onRemove={id => setImages(current => current.filter(image => image.id !== id))} onOptions={setOptions} />
+          <div className="analyze-action"><Button size="lg" className="analyze-button" disabled={!valid || running || uploading} aria-describedby="analysis-help" onClick={() => { void analyze(); }}>{running ? <Spinner as="span" size="sm" aria-hidden="true" /> : <Sparkles size={18} aria-hidden="true" />}{t(running ? 'settings.running' : job ? 'settings.again' : 'settings.analyze')}<ArrowRight size={19} aria-hidden="true" /></Button><p id="analysis-help" className={`small ${!valid && images.length ? 'validation-note' : 'muted'}`}>{!valid ? t(needsType ? 'upload.needsType' : noImages ? 'upload.missing' : 'upload.duplicate') : t('settings.imageOnly')}</p></div>
+          {error && <div className="alert alert-danger persistent-error"><strong>{t('errors.heading')}</strong><p className="mb-0 mt-1">{t(error)}</p>
+            {submittedImages.length > 0 && job?.status === 'failed' && (error === 'errors.analysis_failed' || error === 'errors.invalid_response') && <details className="request-details"><summary>{t('diagnostics.title')}</summary><dl>
+              {submittedImages.map(image => <div key={image.id}><dt>{image.assignment === 'unused' ? t('upload.unused') : compositionNames[image.assignment]}</dt><dd>{image.name}</dd></div>)}
+            </dl><p className="small">{t('diagnostics.resolution', { value: submittedOptions.max_side })}</p><p className="small">{t('diagnostics.job', { id: job.id })}</p></details>}
+          </div>}
         </div>
         {running ? <section className="surface progress-panel" aria-labelledby="progress-title"><div className="progress-emblem"><ScanLine size={45} strokeWidth={1.2} aria-hidden="true" /></div><p className="eyebrow">FIRESENTINEL / SENTINEL-2</p><h2 id="progress-title">{t('progress.title')}</h2><p role="status" aria-live="polite" aria-atomic="true">{t(`progress.${job?.stage ?? 'queued'}`)}</p><progress max={stages.length} value={stageIndex + 1} aria-label={t('progress.title')} aria-valuetext={t(`progress.${job?.stage ?? 'queued'}`)} /><p className="small muted">{t('progress.help')}</p>{pollError && <div role="alert" className="alert alert-warning"><p>{t('progress.reconnect')}</p><Button variant="outline-primary" onClick={() => { setPollError(false); setRetry(value => value + 1); }}>{t('progress.retry')}</Button></div>}</section>
           : job?.status === 'completed' && job.result ? <Results key={job.id} jobId={job.id} result={job.result} notify={notify} />

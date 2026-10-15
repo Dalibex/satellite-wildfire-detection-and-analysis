@@ -137,15 +137,16 @@ test('True Color alone can be submitted with smoke recovery always enabled', asy
   await assignment.selectOption('truecolor');
   await expect(page.getByRole('button', { name: 'Analizar imágenes' })).toBeEnabled();
 
-  // Verify the frontend contract independently of the legacy SWIR-only API.
-  const job = { id: 'truecolor-only', status: 'queued', stage: 'queued', error: null, result: null };
-  await page.route('**/api/analyses', route => route.fulfill({ json: job }));
-  await page.route('**/api/analyses/truecolor-only', route => route.fulfill({ json: job }));
   const submitted = page.waitForRequest(request => request.url().endsWith('/api/analyses') && request.method() === 'POST');
   await page.getByRole('button', { name: 'Analizar imágenes' }).click();
   const payload: unknown = (await submitted).postDataJSON();
   expect(payload).toEqual({ truecolor: expect.any(String), max_side: 2500, smoke_recovery: true });
-  await expect(page.getByRole('heading', { name: 'Tu escena está en análisis' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Explora la escena' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Imagen base', exact: true })).toHaveValue('truecolor');
+  await expect.poll(() => page.locator('.base-image').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByText('El análisis usa solo True Color.', { exact: false })).toBeVisible();
+  const accessibility = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(accessibility.violations).toEqual([]);
 });
 
 test('hotspots collapse by default and reopen with the keyboard', async ({ page }) => {

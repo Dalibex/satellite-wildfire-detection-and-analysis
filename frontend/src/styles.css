@@ -121,6 +121,11 @@ summary { cursor: pointer; color: var(--fw-ink); font-size: .8rem; font-weight: 
 .validation-note { color: #9c3c1f; }
 [data-bs-theme='dark'] .validation-note { color: #ffc09f; }
 .persistent-error { margin-top: 16px; font-size: .8rem; }
+.request-details summary { color: inherit; }
+.request-details dl { margin: 0; }
+.request-details dl > div { padding-block: 4px; }
+.request-details dd { margin: 0; overflow-wrap: anywhere; }
+.request-details p { overflow-wrap: anywhere; }
 .empty-workspace { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 600px; text-align: center; padding: 40px; border: 1px solid var(--fw-border); border-radius: 13px; background: linear-gradient(130deg, var(--fw-soft), var(--fw-bg)); }
 .empty-image-grid { position: relative; display: grid; place-items: center; width: 190px; height: 160px; color: var(--fw-accent); background-image: linear-gradient(var(--fw-border) 1px, transparent 1px), linear-gradient(90deg, var(--fw-border) 1px, transparent 1px); background-size: 20px 20px; margin-bottom: 32px; }
 .grid-corner { position: absolute; width: 20px; height: 20px; border-color: var(--fw-accent); border-style: solid; }

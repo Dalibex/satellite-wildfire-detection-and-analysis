@@ -18,14 +18,19 @@ export const uploadSchema = z.object({
   id: z.string(), name: z.string(), width: z.number(), height: z.number(), bytes: z.number(),
   detected: compositionSchema, preview: z.string(),
 });
-export type UploadedImage = z.infer<typeof uploadSchema> & { assignment: Composition | 'unused' };
+export type UploadedImage = z.infer<typeof uploadSchema> & {
+  assignment: Composition | 'unused';
+  assignmentSource: 'filename' | 'visual' | 'manual';
+};
+export const MAX_INPUT_IMAGES = 3;
 const confidence = z.enum(['alta', 'media', 'baja']);
 const hotspotSchema = z.object({
   id: z.number(), centroid_xy: z.tuple([z.number(), z.number()]),
   bbox_xywh: z.tuple([z.number(), z.number(), z.number(), z.number()]),
   n_pixels: z.number(), peak_red: z.number(), mean_ratio: z.number(),
   intensity: confidence, confidence, location: z.enum(['frente', 'interior', 'aislado']),
-  near_smoke: z.boolean(), reasons: z.array(z.enum(['edge', 'secondary', 'interior', 'isolated', 'smoke'])),
+  near_smoke: z.boolean(), reasons: z.array(z.enum(['edge', 'secondary', 'interior', 'isolated', 'smoke', 'low_contrast', 'truecolor_only', 'other'])),
+  contrast: z.number().optional(), reason_details: z.array(z.string()).optional(),
 });
 export type Hotspot = z.infer<typeof hotspotSchema>;
 export const reportSchema = z.object({
@@ -36,7 +41,8 @@ export const reportSchema = z.object({
   smoke_low_regions: z.number(), front_sectors: z.number(),
   direction: z.enum(['nw', 'n', 'ne', 'w', 'center', 'e', 'sw', 's', 'se']),
   hotspots: z.array(hotspotSchema), rejected_hotspots: z.array(hotspotSchema),
-  notes: z.array(z.enum(['no_truecolor', 'wildfire_experimental', 'smoke_low', 'under_smoke', 'smoke_obscured', 'composition_mismatch'])),
+  notes: z.array(z.enum(['no_truecolor', 'wildfire_experimental', 'smoke_low', 'under_smoke', 'smoke_obscured', 'composition_mismatch', 'reference_only', 'truecolor_only'])),
+  validation: z.record(z.string(), z.unknown()).optional(),
 });
 export type Report = z.infer<typeof reportSchema>;
 export const optionsSchema = z.object({
@@ -61,6 +67,7 @@ export const stages = ['queued', 'loading', 'masks', 'burned', 'fire', 'metrics'
 
 export function assignmentsValid(images: UploadedImage[]): boolean {
   const active = images.filter(image => image.assignment !== 'unused');
-  return active.length > 0
+  return images.length <= MAX_INPUT_IMAGES && active.length === images.length
+    && active.some(image => image.assignment === 'swir' || image.assignment === 'truecolor')
     && new Set(active.map(image => image.assignment)).size === active.length;
 }

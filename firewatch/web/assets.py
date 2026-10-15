@@ -5,10 +5,8 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-import cv2
 import numpy as np
 from PIL import Image
-from scipy import ndimage as ndi
 
 from ..geometry import mask_polygons
 from ..pipeline import Analysis
@@ -28,42 +26,11 @@ def _path(mask: np.ndarray) -> str:
     return " ".join(rings)
 
 
-def front_segments(analysis: Analysis) -> list[list[list[int]]]:
-    """Finds outer-edge sectors near accepted front pixels, excluding island edges."""
-    candidates = np.zeros_like(analysis.fire.accepted)
-    for cluster in analysis.fire.clusters:
-        if cluster.location != "frente" or cluster.confidence == "baja":
-            continue
-        x, y, width, height = cluster.bbox_xywh
-        candidates[y:y + height, x:x + width] |= analysis.fire.accepted[y:y + height, x:x + width]
-    if not candidates.any():
+def front_segments(analysis: Analysis) -> list[list[list[float]]]:
+    """Uses the engine's active-front sectors without a second estimation algorithm."""
+    if analysis.front is None:
         return []
-    radius = max(6, round(np.hypot(*candidates.shape) * 0.012))
-    near = ndi.distance_transform_edt(~candidates) <= radius
-    contours, _ = cv2.findContours(
-        analysis.burn.footprint.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE,
-    )
-    segments = []
-    for contour in contours:
-        points = contour[:, 0, :]
-        keep = near[points[:, 1], points[:, 0]]
-        if keep.all():
-            segments.append(np.vstack([points, points[:1]]).tolist())
-            continue
-        # Start at a gap so a sector crossing the contour origin stays connected.
-        start = int(np.flatnonzero(~keep)[0])
-        points, keep = np.roll(points, -start, axis=0), np.roll(keep, -start)
-        run = []
-        for point, selected in zip(points, keep):
-            if selected:
-                run.append(point.tolist())
-            elif run:
-                if len(run) > 1:
-                    segments.append(run)
-                run = []
-        if len(run) > 1:
-            segments.append(run)
-    return segments
+    return [segment.points.tolist() for segment in analysis.front.segments]
 
 
 def _svg(width: int, height: int, body: str) -> str:
@@ -89,8 +56,8 @@ def build_assets(analysis: Analysis, directory: Path) -> dict:
     layers = {}
     bases = {}
     files = []
-    for key in ("swir", "truecolor", "wildfire"):
-        array = getattr(analysis, key)
+    base_images = {"swir": analysis.swir, "truecolor": analysis.truecolor, "wildfire": analysis.reference}
+    for key, array in base_images.items():
         if array is not None:
             filename = f"base-{key}.png"
             Image.fromarray(np.clip(array, 0, 255).astype(np.uint8)).save(directory / filename)
@@ -169,6 +136,7 @@ def build_assets(analysis: Analysis, directory: Path) -> dict:
         "dentro del área quemada (posible rescoldo)": "interior",
         "lejos de cualquier área quemada": "isolated",
         "junto a humo": "smoke",
+        "detectado solo en True Color (firma de llama poco fiable)": "truecolor_only",
     }
     def clusters(accepted: bool) -> list[dict]:
         result = []
@@ -176,22 +144,30 @@ def build_assets(analysis: Analysis, directory: Path) -> dict:
             if (cluster.confidence != "baja") != accepted:
                 continue
             item = asdict(cluster)
-            item["reasons"] = [reason_codes[reason] for reason in cluster.reasons]
+            item["reasons"] = [
+                "low_contrast" if reason.startswith("no destaca de su entorno (")
+                else reason_codes.get(reason, "other")
+                for reason in cluster.reasons
+            ]
+            item["reason_details"] = list(cluster.reasons)
             result.append(item)
         return result
 
     notes = []
     if analysis.truecolor is None:
         notes.append("no_truecolor")
-    if analysis.wildfire is not None:
-        notes.append("wildfire_experimental")
+    if analysis.reference is not None:
+        notes.append("reference_only")
+    if analysis.swir is None:
+        notes.append("truecolor_only")
     if report["humo_baja_confianza_zonas"]:
         notes.append("smoke_low")
     if report["area_quemada"]["pixeles_bajo_humo_probable"]:
         notes.append("under_smoke")
     if report["fraccion_perimetro_con_humo"] > 0.15:
         notes.append("smoke_obscured")
-    if report["imagen"]["composiciones"]["swir"]["detectado"] != "swir":
+    swir_info = report["imagen"]["composiciones"].get("swir")
+    if swir_info and swir_info["detectado"] != "swir":
         notes.append("composition_mismatch")
     web_report = {
         "version": report["version"], "width": width, "height": height,
@@ -209,6 +185,8 @@ def build_assets(analysis: Analysis, directory: Path) -> dict:
         "front_sectors": len(segments), "direction": direction,
         "hotspots": clusters(True), "rejected_hotspots": clusters(False), "notes": notes,
     }
+    if "validacion" in report:
+        web_report["validation"] = report["validacion"]
     (directory / "report.json").write_text(json.dumps(web_report, ensure_ascii=False, indent=2), encoding="utf-8")
     files.append("report.json")
     return {"report": web_report, "bases": bases, "layers": layers, "files": files}

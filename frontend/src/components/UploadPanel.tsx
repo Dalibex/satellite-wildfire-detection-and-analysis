@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Form, Spinner } from 'react-bootstrap';
-import { Check, FileImage, Trash2, UploadCloud } from 'lucide-react';
+import { Check, FileImage, ScanLine, Tag, Trash2, UploadCloud } from 'lucide-react';
 import { apiUrl } from '../api';
-import { compositionNames } from '../domain';
+import { compositionNames, MAX_INPUT_IMAGES } from '../domain';
 import type { AnalysisOptions, Composition, UploadedImage } from '../domain';
 
 interface Props {
@@ -38,27 +38,31 @@ export default function UploadPanel({ images, uploading, running, options, onFil
       <input ref={input} type="file" multiple accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden
         aria-label={t('upload.choose')} disabled={disabled}
         onChange={event => { onFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />
-      <Button variant="outline-primary" disabled={disabled} aria-describedby="upload-limits" onClick={() => input.current?.click()}>
+      <Button variant="outline-primary" disabled={disabled || images.length >= MAX_INPUT_IMAGES} aria-describedby="upload-limits" onClick={() => input.current?.click()}>
         {uploading ? <Spinner as="span" size="sm" aria-hidden="true" /> : <span aria-hidden="true">＋</span>} {t('upload.choose')}
       </Button>
-      <small className="muted d-block mt-3" id="upload-limits">{t('upload.formats')}</small>
+      <small className="muted d-block mt-3" id="upload-limits">{t('upload.formats')}<br />{t('upload.limit', { max: MAX_INPUT_IMAGES })}</small>
     </div>
     <p className="small muted mt-3">{t('upload.guessHelp')}</p>
     {uploading && <p role="status" className="small"><Spinner as="span" size="sm" aria-hidden="true" /> {t('upload.busy')}</p>}
     {images.length > 0 && <ul className="upload-list list-unstyled">
-      {images.map(image => <li key={image.id} className="upload-item">
+      {images.map(image => {
+        const duplicate = image.assignment !== 'unused' && images.some(other => other.id !== image.id && other.assignment === image.assignment);
+        const SourceIcon = image.assignmentSource === 'filename' ? Tag : image.assignmentSource === 'manual' ? Check : ScanLine;
+        return <li key={image.id} className="upload-item">
         <img src={apiUrl(image.preview)} alt="" className="upload-preview" />
         <div className="upload-detail"><span className="file-name" title={image.name}>{image.name}</span>
           <span className="small muted">{t('upload.dimensions', image)}</span>
-          <span className="small detected"><Check size={13} aria-hidden="true" /> {t('upload.detected', { kind: compositionNames[image.detected] })}</span>
+          <span className="small detected"><SourceIcon size={13} aria-hidden="true" /> {t(`upload.source_${image.assignmentSource}`, { kind: image.assignment === 'unused' ? t('upload.unused') : compositionNames[image.assignment] })}</span>
           <Form.Select size="sm" aria-label={t('upload.kind', { name: image.name })} value={image.assignment} disabled={disabled}
+            isInvalid={duplicate || image.assignment === 'unused'} aria-invalid={duplicate || image.assignment === 'unused'} aria-describedby="analysis-help"
             onChange={event => { const value = event.target.value; if (value === 'swir' || value === 'truecolor' || value === 'wildfire' || value === 'unused') onAssign(image.id, value); }}>
             {Object.entries(compositionNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
             <option value="unused">{t('upload.unused')}</option>
           </Form.Select>
         </div>
         <Button variant="link" className="icon-button remove-button" aria-label={t('upload.remove', { name: image.name })} disabled={disabled} onClick={() => onRemove(image.id)}><Trash2 size={18} aria-hidden="true" /></Button>
-      </li>)}
+      </li>; })}
     </ul>}
     {mismatched && <p className="inline-note warning-note">{t('upload.mismatch')}</p>}
     <div className="composition-guide">

@@ -1,5 +1,10 @@
 {
   "notification": { "title": "Notifications" },
+  "diagnostics": {
+    "title": "Images submitted for analysis",
+    "resolution": "Submitted resolution: {{value}} px",
+    "job": "Analysis identifier: {{id}}"
+  },
   "app": { "title": "Image analysis", "subtitle": "Wildfire observation · Sentinel-2", "skip": "Skip to content", "language": "Language", "theme": "Appearance", "light": "Light", "dark": "Dark", "system": "System", "contrast": "High contrast", "local": "Image processing", "footer": "III Malackathon · INDRA Espacio Challenge", "footerNote": "Rule-based detection. Review the results before interpreting them." },
   "intro": { "title": "One image. A clearer picture.", "body": "Outline burned areas, identify active hotspots, and explore each analysis layer.", "step1": "Upload your images", "step2": "Analyze the scene", "step3": "Explore and export" },
   "upload": {
@@ -13,10 +18,15 @@
     "busy": "Uploading and checking images…",
     "detected": "Suggestion: {{kind}}",
     "kind": "Composition type for {{name}}",
-    "unused": "Do not use",
+    "unused": "Select type",
     "remove": "Remove {{name}}",
-    "guessHelp": "Automatic identification is a suggestion. You can correct the type and use True Color or SWIR on its own.",
-    "missing": "Add at least one image to begin.",
+    "guessHelp": "We recognize SWIR, True Color, and Wildfire from filenames. Otherwise, we use the visual suggestion. Your manual selection always takes priority.",
+    "source_filename": "From filename: {{kind}}",
+    "source_visual": "Visual suggestion: {{kind}}",
+    "source_manual": "Selected: {{kind}}",
+    "needsType": "Select a type for each image before analysis.",
+    "limit": "Up to {{max}} images: one of each type.",
+    "missing": "Add a SWIR or True Color image for analysis. Wildfire provides a validation reference.",
     "duplicate": "Assign only one image to each composition type.",
     "count_one": "{{count}} image ready",
     "count_other": "{{count}} images ready",
@@ -25,7 +35,7 @@
     "optional": "Optional",
     "swirHelp": "B12 · B8A · B4. Improves burned-area identification.",
     "truecolorHelp": "Natural color for interpreting the scene and smoke.",
-    "wildfireHelp": "Adds fire candidates. Experimental.",
+    "wildfireHelp": "Optional reference for hotspot validation. It does not contribute to detection.",
     "mismatch": "The images have different aspect ratios. They will resize to the base image dimensions without correcting alignment.",
     "replace": "You can remove or change images before another analysis.",
     "added": "Images are ready."
@@ -45,9 +55,9 @@
   "metrics": { "title": "The scene in numbers", "burned": "Confirmed area", "percent": "{{value}}% of valid pixels", "range": "Strict–permissive range", "rangeHelp": "The upper bound includes probable burn beneath smoke.", "fire": "Accepted hotspots", "rejected_one": "{{count}} rejected hotspot", "rejected_other": "{{count}} rejected hotspots", "perimeter": "Perimeter", "water": "Excluded water inside the perimeter", "islands_one": "{{count}} unburned island", "islands_other": "{{count}} unburned islands", "probable": "Probable burn beneath smoke", "pixels": "px", "pixelArea": "pixels", "imagePixels": "Pixels at analysis resolution, not at original file resolution." },
   "description": { "title": "Result description", "detected": "A burned area of {{pixels}} pixels is detected, covering {{percent}}% of valid pixels in the {{direction}} part of the image.", "none": "No burned area was detected in the image.", "fire_one": "{{count}} active hotspot is accepted.", "fire_other": "{{count}} active hotspots are accepted.", "probable": "Another {{pixels}} pixels are estimated as probable burn beneath smoke. This category is less reliable and remains separate.", "water": "Interior water is excluded from the burned area, and unburned islands are preserved.", "alt": "Wildfire analysis with {{pixels}} burned pixels and {{count}} accepted hotspots. A description and table follow the viewer.", "copy": "Copy description", "copied": "Description copied." },
   "directions": { "nw": "northwestern", "n": "northern", "ne": "northeastern", "w": "western", "center": "central", "e": "eastern", "sw": "southwestern", "s": "southern", "se": "southeastern" },
-  "notes": { "title": "Analysis context and limitations", "no_truecolor": "Without True Color, smoke and water separation is less reliable.", "wildfire_experimental": "Wildfire composition interpretation is experimental.", "smoke_low": "Some smoke fragments have low confidence. They appear separately and do not contribute to burn recovery or hotspot validation.", "under_smoke": "Probable burn beneath smoke is an estimate, not a confirmed area.", "smoke_obscured": "Part of the perimeter is near smoke. The area can be underestimated.", "composition_mismatch": "The image assigned as SWIR resembles another composition. Review its assignment before interpreting the result." },
+  "notes": { "title": "Analysis context and limitations", "no_truecolor": "Without True Color, smoke and water separation is less reliable.", "wildfire_experimental": "Wildfire composition interpretation is experimental.", "reference_only": "Wildfire only validates hotspots after detection. It does not add hotspots to the result.", "truecolor_only": "Only True Color is used. Flame detection is less reliable, and recovering burn beneath smoke requires SWIR.", "smoke_low": "Some smoke fragments have low confidence. They appear separately and do not contribute to burn recovery or hotspot validation.", "under_smoke": "Probable burn beneath smoke is an estimate, not a confirmed area.", "smoke_obscured": "Part of the perimeter is near smoke. The area can be underestimated.", "composition_mismatch": "The image assigned as SWIR resembles another composition. Review its assignment before interpreting the result." },
   "hotspots": { "title": "Active hotspots", "help": "Select a hotspot to highlight it in the viewer. All positions are image coordinates.", "caption": "Accepted hotspots in this analysis", "empty": "There are no accepted active hotspots.", "id": "Hotspot", "position": "Position (x, y)", "confidence": "Confidence", "intensity": "Intensity", "location": "Context", "pixels": "Hot pixels", "reasons": "Reasons", "select": "View hotspot {{id}}", "rejected": "View rejected hotspots", "alta": "High", "media": "Medium", "baja": "Low", "frente": "Burn boundary", "interior": "Interior", "aislado": "Isolated" },
-  "reasons": { "edge": "At the burn boundary", "secondary": "Near a small separate polygon", "interior": "Possible interior ember", "isolated": "Far from the burned area", "smoke": "Near smoke" },
+  "reasons": { "edge": "At the burn boundary", "secondary": "Near a small separate polygon", "interior": "Possible interior ember", "isolated": "Far from the burned area", "smoke": "Near smoke", "low_contrast": "Insufficient contrast against the surroundings", "truecolor_only": "Detected only in True Color: lower reliability", "other": "Additional engine reason (included in the JSON report)" },
   "export": {
     "title": "Take the results with you",
     "language": "Download language",
@@ -74,5 +84,5 @@
     "resolutionNote": "All measurements use analysis resolution. The fire front is a visual estimate.",
     "csvEmpty": "The CSV will contain headers with no hotspot rows."
   },
-  "errors": { "network": "Could not connect to the API. Check that the Python server is running.", "invalid_image": "The file is not a valid PNG or JPG image.", "file_too_large": "The image exceeds the 100 MiB limit.", "too_many_pixels": "The image exceeds 100 million pixels.", "duplicate_image": "An image cannot fill two composition types.", "invalid_request": "The analysis options are invalid. Review the images and settings.", "upload_not_found": "The image is no longer available. Upload it again if you restarted the API.", "job_not_found": "This analysis is no longer available. You can start a new one.", "file_not_found": "The requested file is no longer available.", "analysis_failed": "The analysis could not complete. Check the files and try again.", "export_failed": "The file could not be generated. Check the connection and try again.", "clipboard": "The text could not be copied. You can select and copy it manually.", "unknown": "An unexpected error occurred. Try again.", "close": "Dismiss notification", "heading": "The action could not complete" }
+  "errors": { "network": "Could not connect to the API. Check that the Python server is running.", "invalid_image": "The file is not a valid PNG or JPG image.", "file_too_large": "The image exceeds the 100 MiB limit.", "too_many_pixels": "The image exceeds 100 million pixels.", "too_many_images": "Upload up to 3 images: one SWIR, one True Color, and an optional Wildfire. Remove an image before adding another.", "invalid_compositions": "Assign a different type to each image and include at least SWIR or True Color.", "invalid_response": "The API returned an incompatible result format. See the browser console for details and check the server version.", "duplicate_image": "An image cannot fill two composition types.", "invalid_request": "The analysis options are invalid. Review the images and settings.", "upload_not_found": "The image is no longer available. Upload it again if you restarted the API.", "job_not_found": "This analysis is no longer available. You can start a new one.", "file_not_found": "The requested file is no longer available.", "analysis_failed": "The server could not complete the analysis. Review the submitted images and the error in the Python terminal.", "export_failed": "The file could not be generated. Check the connection and try again.", "clipboard": "The text could not be copied. You can select and copy it manually.", "unknown": "An unexpected error occurred. Try again.", "close": "Dismiss notification", "heading": "The action could not complete" }
 }

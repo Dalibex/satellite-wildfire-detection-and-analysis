@@ -7,11 +7,7 @@ quemada** (reto básico) y **detecta los focos de fuego activo** (reto avanzado)
 con el perímetro y los focos dibujados. No entrena ningún modelo: usa reglas basadas en la física de la banda
 SWIR, con umbrales relativos a cada escena para generalizar a imágenes nuevas.
 
-<<<<<<< Updated upstream
 **Estado: motor de análisis por línea de comandos y aplicación web local con React.**
-=======
-**Estado (v0.6): retos básico y avanzado completos, por línea de comandos (sin interfaz web todavía).**
->>>>>>> Stashed changes
 
 ## Qué hace
 
@@ -186,11 +182,7 @@ pip install -r requirements.txt   # incluye pytest
 python -m pytest -q
 ```
 
-<<<<<<< Updated upstream
 Pruebas sobre escenas sintéticas con verdad conocida. Entre ellas:
-=======
-37 tests sobre escenas sintéticas con verdad conocida. Entre ellos:
->>>>>>> Stashed changes
 
 - un lago y un río fuera del incendio **nunca** se marcan como quemados;
 - un lago dentro del incendio queda dentro del perímetro pero **no** suma superficie;

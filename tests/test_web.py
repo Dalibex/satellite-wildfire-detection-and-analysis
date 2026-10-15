@@ -91,6 +91,7 @@ def test_no_fire_scene_has_no_estimated_front_and_no_hotspots(client):
 
 @pytest.mark.parametrize("payload,code", [
     ({}, 422), ({"swir": "missing"}, 404),
+    ({"wildfire": "missing"}, 422), ({"swir": None, "truecolor": None}, 422),
     ({"swir": "missing", "bbox": [0, 0, 1, 1]}, 422),
     ({"swir": "missing", "max_side": 0}, 422),
     ({"swir": "missing", "sensitivity": "unknown"}, 422),
@@ -139,3 +140,65 @@ def test_app_instances_do_not_share_uploads(tmp_path):
         image = _upload(first, make_scene()[0])
     with TestClient(create_app(tmp_path / "second")) as second:
         assert second.get(image["preview"]).status_code == 404
+
+
+def test_truecolor_only_exports_results_and_visible_flame_reasons(client):
+    _, tc, truth = make_scene()
+    tc[truth["fire"]] = (255, 170, 40)
+    image = _upload(client, tc, "truecolor.png")
+    response = client.post("/api/analyses", json={"truecolor": image["id"], "smoke_recovery": True})
+    assert response.status_code == 202
+    job = _complete(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    result = job["result"]
+    assert set(result["bases"]) == {"truecolor"}
+    assert set(result["inputs"]) == {"truecolor"}
+    assert "truecolor_only" in result["report"]["notes"]
+    assert "composition_mismatch" not in result["report"]["notes"]
+    assert result["report"]["probable_pixels"] == 0
+    hotspots = result["report"]["hotspots"] + result["report"]["rejected_hotspots"]
+    assert hotspots
+    assert all("truecolor_only" in hotspot["reasons"] for hotspot in hotspots)
+    assert all(hotspot["confidence"] != "alta" for hotspot in result["report"]["hotspots"])
+    for file in result["files"]:
+        assert client.get(f"/api/analyses/{job['id']}/files/{file}").status_code == 200
+
+
+def test_low_contrast_rejection_is_exported_without_crashing(client):
+    swir, _, _ = make_scene(isolated_hot=False)
+    swir[50:75, 110:135] = (220, 180, 160)
+    swir[60:63, 120:123] = (240, 120, 40)
+    image = _upload(client, swir)
+    started = client.post("/api/analyses", json={"swir": image["id"]})
+    job = _complete(client, started.json()["id"])
+    assert job["status"] == "completed", job
+    rejected = job["result"]["report"]["rejected_hotspots"]
+    low_contrast = [hotspot for hotspot in rejected if "low_contrast" in hotspot["reasons"]]
+    assert low_contrast
+    assert low_contrast[0]["contrast"] < 45
+    assert any("contraste" in reason for reason in low_contrast[0]["reason_details"])
+
+
+def test_wildfire_is_a_validation_reference_and_never_adds_detected_hotspots(client):
+    swir, tc, truth = make_scene()
+    first = _upload(client, swir)
+    second = _upload(client, tc)
+    options = {"swir": first["id"], "truecolor": second["id"]}
+    baseline = _complete(client, client.post("/api/analyses", json=options).json()["id"])
+    assert baseline["status"] == "completed", baseline
+    reference = tc.copy()
+    reference[truth["fire"]] = (255, 220, 30)
+    reference[20:25, 20:25] = (255, 220, 30)
+    uploaded = _upload(client, reference, "wildfire.png")
+    with_reference = _complete(client, client.post("/api/analyses", json={**options, "wildfire": uploaded["id"]}).json()["id"])
+    assert with_reference["status"] == "completed", with_reference
+    result = with_reference["result"]
+    assert "wildfire" in result["bases"]
+    assert "reference_only" in result["report"]["notes"]
+    assert "validation" in result["report"]
+    assert result["report"]["hotspots"] == baseline["result"]["report"]["hotspots"]
+    assert result["report"]["burned_pixels"] == baseline["result"]["report"]["burned_pixels"]
+    for name in ("mask-fire.png", "mask-burned.png", "layer-front.svg"):
+        original = client.get(f"/api/analyses/{baseline['id']}/files/{name}")
+        validated = client.get(f"/api/analyses/{with_reference['id']}/files/{name}")
+        assert validated.content == original.content
