@@ -57,6 +57,12 @@ class SmokeParams:
     tc_max_sat: float = 0.14
     tc_min_blue_minus_red: float = -6.0
     min_area_frac: float = 0.0005
+    # Confianza del humo: un penacho es grande, compacto y nace junto al incendio.
+    # Los fragmentos pequeños, sueltos y lejos del quemado se marcan como "baja confianza".
+    main_rel_area: float = 0.15    # >= 15 % del humo más grande de la escena => confianza alta
+    near_rel_area: float = 0.03    # ...o >= 3 % si además está pegado al área quemada
+    near_burn_frac: float = 0.02   # "pegado" = a menos de esta fracción de la diagonal del quemado
+    min_solidity: float = 0.35     # un penacho es compacto; formas muy fragmentadas/finas => baja
 
 
 @dataclass

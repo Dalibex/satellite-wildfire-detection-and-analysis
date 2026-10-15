@@ -17,7 +17,7 @@ from .config import Params
 from .fire import FireResult, detect_fire, wildfire_hot_pixels
 from .geometry import GeoRef, mask_polygons, polygon_length, to_geojson
 from .io import border_mask, load_rgb_scaled, match_size
-from .masks import cloud_mask, smoke_mask_swir, smoke_mask_tc, water_mask
+from .masks import classify_smoke, cloud_mask, smoke_mask_swir, smoke_mask_tc, water_mask
 from .render import render_debug, render_overlay
 
 
@@ -35,6 +35,7 @@ class Analysis:
     report: dict
     burn_polygons: list
     geojson: dict
+    smoke_low: np.ndarray | None = None   # humo de baja confianza (posible error), aparte de `smoke`
 
 
 def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params | None = None,
@@ -79,6 +80,8 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
     # --- 2. Área quemada (reto básico) ---------------------------------
     score = burn_score(swir, valid & ~cloud, params.burn, tc=tc, smoke_tc=smoke_tc)
     burn = segment_burned(score, valid & ~cloud, water, params.burn)
+    # Humo: solo el de confianza alta alimenta el resto del análisis; el suelto se marca aparte.
+    smoke, smoke_low, n_smoke_low = classify_smoke(smoke, burn.footprint, params.smoke)
     burn.under_smoke = (recover_under_smoke(swir, smoke, water, valid & ~cloud, burn.footprint, params.burn)
                         if params.burn.smoke_recovery else np.zeros(shape, dtype=bool))
 
@@ -91,10 +94,11 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
     # --- 4. Métricas e informe ------------------------------------------
     polys = mask_polygons(burn.footprint)
     report = _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, comp_info,
-                           params, bool(tc is not None), bool(wf is not None))
+                           params, bool(tc is not None), bool(wf is not None),
+                           smoke_low=smoke_low, n_smoke_low=n_smoke_low)
     gj = to_geojson(polys, [c for c in fire.clusters if c.confidence != "baja"], shape, geo,
                     {"generador": f"firewatch {__version__}"}, smoke_polys=mask_polygons(burn.under_smoke))
-    return Analysis(swir, tc, wf, valid, water, smoke, cloud, burn, fire, report, polys, gj)
+    return Analysis(swir, tc, wf, valid, water, smoke, cloud, burn, fire, report, polys, gj, smoke_low=smoke_low)
 
 
 def _direction(x, y, w, h) -> str:
@@ -110,7 +114,7 @@ def _fmt(x: float, nd: int = 0) -> str:
 
 
 def _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, comp_info, params,
-                  has_tc, has_wf) -> dict:
+                  has_tc, has_wf, smoke_low=None, n_smoke_low=0) -> dict:
     h, w = shape
     n_valid = int(valid.sum())
     px_burn = int(burn.burned.sum())
@@ -166,6 +170,9 @@ def _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, com
     if not m:
         warnings_out.append("Sin escala: superficie en píxeles y % de la imagen. "
                             "Indica --pixel-size o --bbox para obtener hectáreas.")
+    if n_smoke_low:
+        warnings_out.append(f"{n_smoke_low} zonas de humo marcadas como de baja confianza (pequeñas o sueltas, "
+                            "lejos del penacho principal): posibles errores de detección, no se usan en el análisis.")
     if px_under:
         warnings_out.append("Se ha estimado área quemada probable bajo el humo (marcada aparte, con trama distinta): "
                             "es una estimación menos fiable que el área confirmada.")
@@ -188,6 +195,8 @@ def _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, com
         "agua_dentro_perimetro_px": int(burn.water_inside.sum()),
         "agua_total_px": int(water.sum()),
         "humo_px": int(smoke.sum()) if smoke is not None else 0,
+        "humo_baja_confianza_px": int(smoke_low.sum()) if smoke_low is not None else 0,
+        "humo_baja_confianza_zonas": int(n_smoke_low),
         "nubes_px": int(cloud.sum()),
         "fraccion_perimetro_con_humo": round(smoke_border_frac, 3),
         "focos_activos": [asdict(c) for c in accepted],
@@ -238,6 +247,9 @@ def describe(report: dict, centroid, size, accepted) -> str:
         parts.append("No se detectan focos activos.")
     if report["fraccion_perimetro_con_humo"] > 0.15:
         parts.append("Parte del borde está cubierta por humo.")
+    if report.get("humo_baja_confianza_zonas"):
+        parts.append(f"Hay {report['humo_baja_confianza_zonas']} zonas de humo de baja confianza "
+                     "(pequeñas o aisladas), posibles errores de detección.")
     return " ".join(parts)
 
 
@@ -255,7 +267,7 @@ def save_outputs(an: Analysis, out_dir, base: str = "swir", debug: bool = True) 
     else:
         lines.append(f"Superficie: {_fmt(a['porcentaje_imagen'], 1)} % de la imagen")
     lines.append(f"Focos activos: {len(r['focos_activos'])}")
-    overlay = render_overlay(base_img, an.burn, an.fire, an.smoke, lines)
+    overlay = render_overlay(base_img, an.burn, an.fire, an.smoke, lines, smoke_low=an.smoke_low)
     files = {}
     p = out / "resultado.png"; Image.fromarray(overlay).save(p); files["overlay"] = str(p)
     p = out / "mascara_quemado.png"; Image.fromarray((an.burn.burned * 255).astype(np.uint8)).save(p); files["mask_burned"] = str(p)
@@ -267,6 +279,6 @@ def save_outputs(an: Analysis, out_dir, base: str = "swir", debug: bool = True) 
     p = out / "descripcion.txt"; p.write_text(r["descripcion"] + "\n", encoding="utf-8"); files["alt_text"] = str(p)
     if debug:
         p = out / "diagnostico.png"
-        render_debug(p, an.swir, an.burn.score, an.water, an.smoke, an.cloud, an.burn, an.fire, overlay)
+        render_debug(p, an.swir, an.burn.score, an.water, an.smoke, an.cloud, an.burn, an.fire, overlay, smoke_low=an.smoke_low)
         files["debug"] = str(p)
     return files

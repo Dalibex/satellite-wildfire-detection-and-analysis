@@ -70,7 +70,7 @@ def _triangle(img, cx, cy, size, fill, border, bw):
 
 
 def render_overlay(base: np.ndarray, burn, fire, smoke: np.ndarray | None, summary_lines: list[str],
-                   show_legend: bool = True) -> np.ndarray:
+                   show_legend: bool = True, smoke_low: np.ndarray | None = None) -> np.ndarray:
     """Devuelve la imagen base con el perímetro, el área quemada, el humo y los focos."""
     img = np.clip(base, 0, 255).astype(np.uint8).copy()
     h, w = img.shape[:2]
@@ -110,6 +110,12 @@ def render_overlay(base: np.ndarray, burn, fire, smoke: np.ndarray | None, summa
         cs = _contours(smoke)
         _dashed(img, cs, WHITE, t + 2, dash=6 * t, gap=4 * t)
         _dashed(img, cs, SKY, t, dash=6 * t, gap=4 * t)
+
+    # 3b) Humo de BAJA confianza (pequeño/suelto: posible error): línea fina punteada gris, sin relleno
+    if smoke_low is not None and smoke_low.any():
+        cl = _contours(smoke_low)
+        _dashed(img, cl, WHITE, t + 3, dash=t + 2, gap=2 * t + 2)
+        _dashed(img, cl, (40, 40, 40), t, dash=t + 2, gap=2 * t + 2)
 
     # 4) Perímetro: halo blanco + línea bermellón
     cfp = _contours(burn.footprint)
@@ -153,7 +159,7 @@ def _legend_below(img: np.ndarray, lines: list[str], t: int) -> np.ndarray:
     font = _font(fs)
     items = [("area", "Área quemada"), ("perim", "Perímetro"), ("under", "Quemado probable bajo humo"), ("fire_hi", "Foco activo (confianza alta)"),
              ("fire_md", "Foco activo (confianza media)"), ("water", "Agua (excluida)"),
-             ("smoke", "Humo (visible ocluido)")]
+             ("smoke", "Humo (visible ocluido)"), ("smoke_low", "Humo de baja confianza (posible error)")]
     pad, row = fs // 2 + 2, int(fs * 1.6)
     sw = int(fs * 1.6)
     col_w = int(max(font.getlength(lbl) for _, lbl in items) + sw + 3 * pad)
@@ -201,13 +207,16 @@ def _legend_below(img: np.ndarray, lines: list[str], t: int) -> np.ndarray:
             for q in range(0, sw, 8):
                 d.line([sx + q, mid, sx + min(q + 5, sw), mid], fill=(90, 90, 90), width=t + 4)
                 d.line([sx + q, mid, sx + min(q + 5, sw), mid], fill=SKY, width=t + 1)
+        elif kind == "smoke_low":
+            for q in range(0, sw, 5):
+                d.line([sx + q, mid, sx + min(q + 2, sw), mid], fill=(40, 40, 40), width=t + 1)
         d.text((sx + sw + pad, y), label, fill=BLACK, font=font)
     if extra:
         d.text((pad, h + pad + nrows * row), "   ·   ".join(extra), fill=BLACK, font=font)
     return np.asarray(canvas)
 
 
-def render_debug(path: Path, swir, score, water, smoke, cloud, burn, fire, overlay):
+def render_debug(path: Path, swir, score, water, smoke, cloud, burn, fire, overlay, smoke_low=None):
     """Panel de diagnóstico para revisar cada paso (útil para ajustar umbrales)."""
     import matplotlib
     matplotlib.use("Agg")
@@ -222,8 +231,10 @@ def render_debug(path: Path, swir, score, water, smoke, cloud, burn, fire, overl
     veto[water] = BLUE
     if smoke is not None:
         veto[smoke & ~water] = SKY
+    if smoke_low is not None:
+        veto[smoke_low & ~water] = (150, 150, 150)
     veto[cloud] = (200, 200, 200)
-    ax[2].imshow(veto); ax[2].set_title("Vetos: agua (azul), humo (celeste), nube (gris)")
+    ax[2].imshow(veto); ax[2].set_title("Vetos: agua (azul), humo (celeste), humo dudoso/nube (gris)")
     st = np.zeros(swir.shape[:2] + (3,), np.uint8)
     st[burn.footprint] = (120, 120, 120)
     st[burn.burned] = VERMILION

@@ -92,3 +92,55 @@ def cloud_mask(swir: np.ndarray, p: CloudParams, valid: np.ndarray | None = None
     if m.any():
         m = ndi.binary_dilation(m, structure=disk(2))
     return m
+
+
+def classify_smoke(smoke: np.ndarray | None, footprint: np.ndarray | None, p: SmokeParams):
+    """Separa el humo en confianza alta y baja. Devuelve (alta, baja, n_baja).
+
+    El humo se mueve en conjunto: un penacho es una masa grande y compacta, normalmente
+    pegada al incendio. Se considera de ALTA confianza si, comparado con el humo más
+    grande de la escena:
+      - es grande (>= main_rel_area), o
+      - es mediano (>= near_rel_area) y está junto al área quemada,
+    y además es compacto (solidez >= min_solidity). El resto (pequeño, suelto o muy
+    fragmentado) pasa a BAJA confianza: posible error de detección.
+    """
+    if smoke is None or not smoke.any():
+        empty = np.zeros_like(smoke) if smoke is not None else None
+        return smoke, empty, 0
+    h, w = smoke.shape
+    lab, n = ndi.label(smoke, structure=np.ones((3, 3)))
+    sizes = np.bincount(lab.ravel()); sizes[0] = 0
+    biggest = sizes.max()
+    near = None
+    if footprint is not None and footprint.any():
+        r = max(3, int(round(p.near_burn_frac * float(np.hypot(h, w)))))
+        near = ndi.binary_dilation(footprint, structure=disk(r))
+    high = np.zeros(n + 1, dtype=bool)
+    objs = ndi.find_objects(lab)
+    for i, sl in enumerate(objs, start=1):
+        if sl is None:
+            continue
+        rel = sizes[i] / biggest
+        if rel < p.near_rel_area:
+            continue
+        touches = bool(near is not None and near[sl][lab[sl] == i].any())
+        if not (rel >= p.main_rel_area or touches):
+            continue
+        sub = lab[sl] == i
+        if _solidity(sub) >= p.min_solidity:
+            high[i] = True
+    alta = high[lab]
+    baja = smoke & ~alta
+    return alta, baja, int(ndi.label(baja, structure=np.ones((3, 3)))[1])
+
+
+def _solidity(sub: np.ndarray) -> float:
+    """Área / área de la envolvente convexa (1 = compacto, ~0 = fragmentado o filiforme)."""
+    import cv2
+    pts = cv2.findNonZero(sub.astype(np.uint8))
+    if pts is None:
+        return 0.0
+    hull = cv2.convexHull(pts)
+    ha = cv2.contourArea(hull)
+    return float(sub.sum() / ha) if ha > 0 else 1.0
