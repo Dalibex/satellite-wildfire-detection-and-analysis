@@ -28,6 +28,35 @@ def load_rgb(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     return arr, np.zeros(arr.shape[:2], dtype=bool)
 
 
+def load_rgb_scaled(path: str | Path, max_side: int | None = None,
+                    size: tuple[int, int] | None = None):
+    """Como load_rgb, pero reduce la imagen mientras la lee (ahorra tiempo y memoria).
+
+    - max_side: si el lado mayor lo supera, se reduce proporcionalmente.
+    - size: (ancho, alto) exacto de destino (para alinear con otra composición).
+
+    Returns: rgb, transparent, (ancho_original, alto_original)
+    """
+    im = Image.open(path)
+    ow, oh = im.size
+    target = size
+    if target is None and max_side and max(ow, oh) > max_side:
+        f = max_side / max(ow, oh)
+        target = (max(1, round(ow * f)), max(1, round(oh * f)))
+    resized = False
+    if target is not None and tuple(target) != (ow, oh):
+        if im.format == "JPEG":
+            im.draft("RGB", target)  # descodificación parcial: mucho más rápida
+        has_alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
+        im = im.convert("RGBA" if has_alpha else "RGB").resize(target, Image.BOX)
+        resized = True
+    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+        arr = np.asarray(im.convert("RGBA"))
+        return arr[..., :3].astype(np.float32), arr[..., 3] < (128 if resized else 1), (ow, oh)
+    arr = np.asarray(im.convert("RGB")).astype(np.float32)
+    return arr, np.zeros(arr.shape[:2], dtype=bool), (ow, oh)
+
+
 def match_size(img: np.ndarray, shape: tuple[int, int], name: str = "imagen") -> np.ndarray:
     """Redimensiona `img` a `shape` (H, W) si hace falta.
 

@@ -29,6 +29,15 @@ class BurnParams:
     min_area_frac: float = 0.0004  # componentes menores que esta fracción de la imagen se descartan
     island_min_frac: float = 0.0003  # huecos interiores (no agua) mayores que esto se conservan como islas no quemadas
     strict_score: float = 0.60    # máscara "estricta" para dar un rango de superficie
+    # Recuperación bajo el humo: el velo de humo tapa el rojo de la cicatriz, pero la banda
+    # verde de la SWIR (B8A, NIR) sigue siendo más baja sobre lo quemado que sobre vegetación.
+    smoke_recovery: bool = True
+    smoke_sigma: float = 2.0       # suavizado de B8A antes de umbralizar (px)
+    smoke_min_gap: float = 25.0    # separación mínima (niveles 0-255) entre "oscuro" y "claro" dentro del humo; si no, se abstiene
+    smoke_dark_frac_min: float = 0.02  # fracción mínima / máxima de píxeles "oscuros" dentro del humo
+    smoke_dark_frac_max: float = 0.60
+    smoke_link_frac: float = 0.006  # el candidato debe tocar el área confirmada (distancia, fracción de la diagonal)
+    smoke_min_area_frac: float = 0.0003
 
 
 @dataclass

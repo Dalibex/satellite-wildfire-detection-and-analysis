@@ -73,7 +73,7 @@ def polygon_length(pts: np.ndarray) -> float:
     return float(np.hypot(d[:, 0], d[:, 1]).sum())
 
 
-def to_geojson(burn_polys, fire_clusters, shape, geo: GeoRef, props: dict) -> dict:
+def to_geojson(burn_polys, fire_clusters, shape, geo: GeoRef, props: dict, smoke_polys=None) -> dict:
     """GeoJSON con el área quemada y los focos.
 
     Sin bbox, las coordenadas son de píxel (x hacia la derecha, y hacia abajo)
@@ -93,6 +93,12 @@ def to_geojson(burn_polys, fire_clusters, shape, geo: GeoRef, props: dict) -> di
         features.append({
             "type": "Feature",
             "properties": {"kind": "area_quemada", "id": k + 1},
+            "geometry": {"type": "Polygon", "coordinates": [ring(poly["outer"])] + [ring(h) for h in poly["holes"]]},
+        })
+    for k, poly in enumerate(smoke_polys or []):
+        features.append({
+            "type": "Feature",
+            "properties": {"kind": "area_quemada_probable_bajo_humo", "id": k + 1},
             "geometry": {"type": "Polygon", "coordinates": [ring(poly["outer"])] + [ring(h) for h in poly["holes"]]},
         })
     for c in fire_clusters:

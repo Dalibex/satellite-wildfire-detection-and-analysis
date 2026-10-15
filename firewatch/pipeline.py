@@ -11,12 +11,12 @@ from PIL import Image
 from scipy import ndimage as ndi
 
 from . import __version__
-from .burned import BurnResult, burn_score, segment_burned
+from .burned import BurnResult, burn_score, recover_under_smoke, segment_burned
 from .composition import guess_composition
 from .config import Params
 from .fire import FireResult, detect_fire, wildfire_hot_pixels
 from .geometry import GeoRef, mask_polygons, polygon_length, to_geojson
-from .io import border_mask, load_rgb, match_size
+from .io import border_mask, load_rgb_scaled, match_size
 from .masks import cloud_mask, smoke_mask_swir, smoke_mask_tc, water_mask
 from .render import render_debug, render_overlay
 
@@ -38,12 +38,17 @@ class Analysis:
 
 
 def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params | None = None,
-            geo: GeoRef | None = None) -> Analysis:
+            geo: GeoRef | None = None, max_side: int | None = 2500) -> Analysis:
+    """max_side: lado mayor máximo (px) con el que se analiza. Las imágenes más grandes se reducen
+    (la superficie se corrige con el factor de reducción). None = resolución original."""
     params = params or Params()
     geo = geo or GeoRef()
 
-    swir, transp = load_rgb(swir_path)
+    swir, transp, (ow, oh) = load_rgb_scaled(swir_path, max_side=max_side)
     shape = swir.shape[:2]
+    scale = ow / shape[1]
+    if geo.pixel_size_m:
+        geo = GeoRef(pixel_size_m=geo.pixel_size_m * scale, bbox=geo.bbox)
     geo = geo.resolve(shape)
     valid = ~(transp | border_mask(swir))
 
@@ -54,12 +59,12 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
 
     tc = wf = None
     if truecolor_path:
-        tc, tr2 = load_rgb(truecolor_path)
+        tc, _t, _o = load_rgb_scaled(truecolor_path, size=(shape[1], shape[0]))
         tc = match_size(tc, shape, "imagen True Color")
         k2, m2 = guess_composition(tc)
         comp_info["truecolor"] = {"detectado": k2, **m2}
     if wildfire_path:
-        wf, _ = load_rgb(wildfire_path)
+        wf, _t, _o = load_rgb_scaled(wildfire_path, size=(shape[1], shape[0]))
         wf = match_size(wf, shape, "imagen Wildfire")
         k3, m3 = guess_composition(wf)
         comp_info["wildfire"] = {"detectado": k3, **m3}
@@ -74,6 +79,8 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
     # --- 2. Área quemada (reto básico) ---------------------------------
     score = burn_score(swir, valid & ~cloud, params.burn, tc=tc, smoke_tc=smoke_tc)
     burn = segment_burned(score, valid & ~cloud, water, params.burn)
+    burn.under_smoke = (recover_under_smoke(swir, smoke, water, valid & ~cloud, burn.footprint, params.burn)
+                        if params.burn.smoke_recovery else np.zeros(shape, dtype=bool))
 
     # --- 3. Fuego activo (reto avanzado) --------------------------------
     extra = None
@@ -86,7 +93,7 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
     report = _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, comp_info,
                            params, bool(tc is not None), bool(wf is not None))
     gj = to_geojson(polys, [c for c in fire.clusters if c.confidence != "baja"], shape, geo,
-                    {"generador": f"firewatch {__version__}"})
+                    {"generador": f"firewatch {__version__}"}, smoke_polys=mask_polygons(burn.under_smoke))
     return Analysis(swir, tc, wf, valid, water, smoke, cloud, burn, fire, report, polys, gj)
 
 
@@ -107,6 +114,7 @@ def _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, com
     h, w = shape
     n_valid = int(valid.sum())
     px_burn = int(burn.burned.sum())
+    px_under = int(burn.under_smoke.sum()) if burn.under_smoke is not None else 0
     px_strict = int(burn.burned_strict.sum())
     perim_px = sum(polygon_length(p["outer"]) for p in polys)
 
@@ -122,11 +130,15 @@ def _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, com
         "pixeles": px_burn,
         "pixeles_estricto": px_strict,
         "porcentaje_imagen": round(100 * px_burn / max(n_valid, 1), 3),
+        "pixeles_bajo_humo_probable": px_under,
+        "porcentaje_bajo_humo_probable": round(100 * px_under / max(n_valid, 1), 3),
     }
     perimeter = {"pixeles": round(perim_px, 1)}
     if m:
         area["hectareas"] = round(px_burn * m * m / 1e4, 1)
-        area["hectareas_rango"] = [round(px_strict * m * m / 1e4, 1), area["hectareas"]]
+        area["hectareas_bajo_humo_probable"] = round(px_under * m * m / 1e4, 1)
+        # El límite superior incluye lo probable bajo el humo
+        area["hectareas_rango"] = [round(px_strict * m * m / 1e4, 1), round((px_burn + px_under) * m * m / 1e4, 1)]
         perimeter["km"] = round(perim_px * m / 1000, 2)
 
     # Confianza por polígono: puntuación media y tamaño relativo al mayor
@@ -154,7 +166,10 @@ def _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, com
     if not m:
         warnings_out.append("Sin escala: superficie en píxeles y % de la imagen. "
                             "Indica --pixel-size o --bbox para obtener hectáreas.")
-    if smoke_border_frac > 0.15:
+    if px_under:
+        warnings_out.append("Se ha estimado área quemada probable bajo el humo (marcada aparte, con trama distinta): "
+                            "es una estimación menos fiable que el área confirmada.")
+    if smoke_border_frac > 0.15 and not px_under:
         warnings_out.append(f"El {round(100 * smoke_border_frac)}% del perímetro linda con humo: "
                             "el área puede estar infraestimada en esa zona.")
     if not has_tc:
@@ -194,7 +209,7 @@ def describe(report: dict, centroid, size, accepted) -> str:
     a = report["area_quemada"]
     if "hectareas" in a:
         lo, hi = a["hectareas_rango"]
-        sup = f"de unas {_fmt(hi)} ha (rango {_fmt(lo)}–{_fmt(hi)} ha)"
+        sup = f"confirmada de unas {_fmt(a['hectareas'])} ha (rango {_fmt(lo)}–{_fmt(hi)} ha)"
     else:
         sup = f"que ocupa el {_fmt(a['porcentaje_imagen'], 1)} % de la imagen"
     parts = [f"Área quemada {sup}, situada al {_direction(*centroid, w, h)} de la imagen."]
@@ -202,6 +217,11 @@ def describe(report: dict, centroid, size, accepted) -> str:
         parts.append(f"Perímetro aproximado de {_fmt(report['perimetro']['km'], 1)} km.")
     if report["islas_no_quemadas"]:
         parts.append(f"Contiene {report['islas_no_quemadas']} islas interiores sin quemar.")
+    if a.get("pixeles_bajo_humo_probable"):
+        extra = (f" (unas {_fmt(a['hectareas_bajo_humo_probable'])} ha, incluidas en el límite superior del rango)"
+                 if "hectareas_bajo_humo_probable" in a else
+                 f" ({_fmt(a['porcentaje_bajo_humo_probable'], 1)} % de la imagen)")
+        parts.append("Además se estima área quemada probable bajo el humo" + extra + ", menos fiable que el resto.")
     if report["agua_dentro_perimetro_px"]:
         parts.append("Hay masas de agua dentro del perímetro, excluidas de la superficie.")
     if accepted:
@@ -231,7 +251,7 @@ def save_outputs(an: Analysis, out_dir, base: str = "swir", debug: bool = True) 
     a = r["area_quemada"]
     lines = []
     if "hectareas" in a:
-        lines.append(f"Superficie: {_fmt(a['hectareas_rango'][0])}–{_fmt(a['hectareas'])} ha")
+        lines.append(f"Superficie: {_fmt(a['hectareas_rango'][0])}–{_fmt(a['hectareas_rango'][1])} ha")
     else:
         lines.append(f"Superficie: {_fmt(a['porcentaje_imagen'], 1)} % de la imagen")
     lines.append(f"Focos activos: {len(r['focos_activos'])}")
@@ -239,6 +259,8 @@ def save_outputs(an: Analysis, out_dir, base: str = "swir", debug: bool = True) 
     files = {}
     p = out / "resultado.png"; Image.fromarray(overlay).save(p); files["overlay"] = str(p)
     p = out / "mascara_quemado.png"; Image.fromarray((an.burn.burned * 255).astype(np.uint8)).save(p); files["mask_burned"] = str(p)
+    if an.burn.under_smoke is not None:
+        p = out / "mascara_bajo_humo.png"; Image.fromarray((an.burn.under_smoke * 255).astype(np.uint8)).save(p); files["mask_under_smoke"] = str(p)
     p = out / "mascara_focos.png"; Image.fromarray((an.fire.accepted * 255).astype(np.uint8)).save(p); files["mask_fire"] = str(p)
     p = out / "resultado.geojson"; p.write_text(json.dumps(an.geojson, ensure_ascii=False)); files["geojson"] = str(p)
     p = out / "informe.json"; p.write_text(json.dumps(r, ensure_ascii=False, indent=2)); files["report"] = str(p)

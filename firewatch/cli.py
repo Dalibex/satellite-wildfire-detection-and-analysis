@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import time
 
+from .config import Params
 from .geometry import GeoRef
 from .pipeline import analyze, save_outputs
 
@@ -24,12 +25,20 @@ def main(argv=None) -> int:
     ap.add_argument("--pixel-size", type=float, help="Tamaño de píxel en metros (p. ej. 10 o 20).")
     ap.add_argument("--bbox", type=float, nargs=4, metavar=("LON_MIN", "LAT_MIN", "LON_MAX", "LAT_MAX"),
                     help="Extensión geográfica WGS84 de la imagen.")
+    ap.add_argument("--max-side", type=int, default=2500,
+                    help="Lado mayor máximo en px para el análisis (por defecto 2500; 0 = tamaño original, lento).")
+    ap.add_argument("--no-smoke-recovery", action="store_true",
+                    help="No estimar el área quemada probable bajo el humo.")
     ap.add_argument("--no-debug", action="store_true", help="No generar el panel de diagnóstico.")
     a = ap.parse_args(argv)
 
+    params = Params()
+    if a.no_smoke_recovery:
+        params.burn.smoke_recovery = False
     t0 = time.time()
     an = analyze(a.swir, a.truecolor, a.wildfire,
-                 geo=GeoRef(pixel_size_m=a.pixel_size, bbox=tuple(a.bbox) if a.bbox else None))
+                 geo=GeoRef(pixel_size_m=a.pixel_size, bbox=tuple(a.bbox) if a.bbox else None),
+                 max_side=a.max_side or None, params=params)
     files = save_outputs(an, a.out, base=a.base, debug=not a.no_debug)
     r = an.report
     print(r["descripcion"])

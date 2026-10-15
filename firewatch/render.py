@@ -20,6 +20,7 @@ YELLOW = (240, 228, 66)
 ORANGE = (230, 159, 0)
 BLUE = (0, 114, 178)
 SKY = (86, 180, 233)
+PURPLE = (204, 121, 167)   # Okabe-Ito 'reddish purple'
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 
@@ -85,6 +86,19 @@ def render_overlay(base: np.ndarray, burn, fire, smoke: np.ndarray | None, summa
         fill[hatch] = np.array(VERMILION, np.float32)
         img = fill.astype(np.uint8)
 
+    # 1b) Quemado PROBABLE bajo el humo: relleno púrpura con trama cruzada y contorno punteado
+    us = burn.under_smoke
+    if us is not None and us.any():
+        f = img.astype(np.float32)
+        f[us] = 0.75 * f[us] + 0.25 * np.array(PURPLE, np.float32)
+        yy, xx = np.mgrid[:h, :w]
+        cross = ((xx - yy) % max(6, 4 * t)) < max(1, t // 2 + 1)
+        f[cross & us] = np.array(PURPLE, np.float32)
+        img = f.astype(np.uint8)
+        cu = _contours(us)
+        cv2.drawContours(img, cu, -1, WHITE, t + 2, cv2.LINE_AA)
+        _dashed(img, cu, PURPLE, t, dash=2 * t, gap=2 * t)
+
     # 2) Agua dentro del perímetro (excluida del área)
     if burn.water_inside.any():
         f = img.astype(np.float32)
@@ -137,12 +151,12 @@ def _legend_below(img: np.ndarray, lines: list[str], t: int) -> np.ndarray:
     h, w = img.shape[:2]
     fs = max(13, int(w / 70))
     font = _font(fs)
-    items = [("area", "Área quemada"), ("perim", "Perímetro"), ("fire_hi", "Foco activo (confianza alta)"),
+    items = [("area", "Área quemada"), ("perim", "Perímetro"), ("under", "Quemado probable bajo humo"), ("fire_hi", "Foco activo (confianza alta)"),
              ("fire_md", "Foco activo (confianza media)"), ("water", "Agua (excluida)"),
              ("smoke", "Humo (visible ocluido)")]
     pad, row = fs // 2 + 2, int(fs * 1.6)
     sw = int(fs * 1.6)
-    col_w = int(fs * 17)
+    col_w = int(max(font.getlength(lbl) for _, lbl in items) + sw + 3 * pad)
     ncols = max(1, (w - 2 * pad) // col_w)
     nrows = -(-len(items) // ncols)
     extra = [ln for ln in lines if ln]
@@ -163,6 +177,13 @@ def _legend_below(img: np.ndarray, lines: list[str], t: int) -> np.ndarray:
                 x_b, y_b = sx + min(q + fs, sw), sy + fs - (min(q + fs, sw) - q)
                 d.line([x_a, y_a, x_b, y_b], fill=VERMILION, width=1)
             d.rectangle([sx, sy, sx + sw, sy + fs], outline=VERMILION, width=2)
+        elif kind == "under":
+            d.rectangle([sx, sy, sx + sw, sy + fs], fill=(226, 190, 208))
+            for q in range(-fs, sw, 5):
+                d.line([sx + max(q, 0), sy + max(0, -q), sx + min(q + fs, sw), sy + min(fs, sw - q)], fill=PURPLE, width=1)
+            for q in range(0, sw, 6):
+                d.line([sx, sy + fs, sx + sw, sy + fs], fill=PURPLE, width=1)
+            d.rectangle([sx, sy, sx + sw, sy + fs], outline=PURPLE, width=2)
         elif kind == "perim":
             d.line([sx, mid, sx + sw, mid], fill=(90, 90, 90), width=t + 4)
             d.line([sx, mid, sx + sw, mid], fill=VERMILION, width=t + 1)
@@ -207,8 +228,10 @@ def render_debug(path: Path, swir, score, water, smoke, cloud, burn, fire, overl
     st[burn.footprint] = (120, 120, 120)
     st[burn.burned] = VERMILION
     st[burn.burned_strict] = (130, 50, 0)
+    if burn.under_smoke is not None:
+        st[burn.under_smoke] = PURPLE
     st[burn.islands] = (0, 158, 115)
-    ax[3].imshow(st); ax[3].set_title("Quemado (bermellón), estricto (oscuro), islas (verde)")
+    ax[3].imshow(st); ax[3].set_title("Quemado (bermellón), estricto (oscuro), islas (verde), bajo humo (púrpura)")
     fc = np.clip(swir, 0, 255).astype(np.uint8) // 3
     fc[fire.edge_ring] = (80, 80, 80)
     fc[fire.candidates] = (150, 150, 150)

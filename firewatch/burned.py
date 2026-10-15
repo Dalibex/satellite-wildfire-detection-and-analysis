@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy import ndimage as ndi
-from skimage.filters import apply_hysteresis_threshold
+from skimage.filters import apply_hysteresis_threshold, threshold_otsu
 
 from .config import BurnParams
 from .features import luma, pseudo_nbr, saturation
@@ -34,6 +34,7 @@ class BurnResult:
     footprint: np.ndarray    # huella del incendio: quemado + agua interior + huecos pequeños (para el perímetro)
     islands: np.ndarray      # islas interiores no quemadas (excluidas)
     water_inside: np.ndarray  # agua rodeada por el incendio (dentro del perímetro, fuera del área)
+    under_smoke: np.ndarray | None = None  # quemado PROBABLE bajo el humo (estimación, aparte del confirmado)
 
 
 def burn_score(swir: np.ndarray, valid: np.ndarray, p: BurnParams,
@@ -114,3 +115,47 @@ def segment_burned(score: np.ndarray, valid: np.ndarray, water: np.ndarray, p: B
 
 def _near(mask: np.ndarray, r: int) -> np.ndarray:
     return ndi.binary_dilation(mask, structure=disk(r)) if mask.any() else mask
+
+
+def recover_under_smoke(swir: np.ndarray, smoke: np.ndarray | None, water: np.ndarray, valid: np.ndarray,
+                        footprint: np.ndarray, p: BurnParams) -> np.ndarray:
+    """Estima el área quemada oculta bajo el humo (devuelve una máscara aparte, "probable").
+
+    Idea: dentro de la zona de humo, la composición SWIR pierde el tono rojizo de lo quemado,
+    pero B8A (canal verde) sigue siendo claramente más bajo sobre carbón que sobre vegetación.
+    Se separan ambas clases con Otsu SOLO dentro del humo y se conserva lo que:
+      1. forma una clase realmente separada (si no hay bimodalidad, se abstiene), y
+      2. toca el área quemada confirmada (un incendio es contiguo; evita zonas oscuras sueltas).
+    """
+    h, w = swir.shape[:2]
+    empty = np.zeros((h, w), dtype=bool)
+    if smoke is None or not smoke.any() or not footprint.any():
+        return empty
+    zone = smoke & ~water & valid & ~footprint
+    if zone.sum() < 500:
+        return empty
+    g = ndi.gaussian_filter(swir[..., 1], p.smoke_sigma)
+    vals = g[zone]
+    if vals.std() < 1e-3:
+        return empty
+    t = threshold_otsu(vals)
+    dark, light = vals[vals <= t], vals[vals > t]
+    if len(dark) == 0 or len(light) == 0:
+        return empty
+    frac = len(dark) / len(vals)
+    if (light.mean() - dark.mean()) < p.smoke_min_gap or not (p.smoke_dark_frac_min <= frac <= p.smoke_dark_frac_max):
+        return empty
+    cand = zone & (g <= t)
+    cand = ndi.binary_opening(cand, structure=disk(2))
+    cand = ndi.binary_closing(cand, structure=disk(3))
+    diag = float(np.hypot(h, w))
+    link = ndi.binary_dilation(footprint, structure=disk(max(3, int(round(p.smoke_link_frac * diag)))))
+    lab, n = ndi.label(cand)
+    if n == 0:
+        return empty
+    keep = np.unique(lab[link & cand])
+    keep = keep[keep > 0]
+    sel = np.isin(lab, keep)
+    sel = ndi.binary_fill_holes(sel)
+    sel = remove_small(sel & ~water & ~footprint, int(p.smoke_min_area_frac * sel.size))
+    return sel

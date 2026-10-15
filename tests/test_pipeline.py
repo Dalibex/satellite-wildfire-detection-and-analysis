@@ -189,3 +189,50 @@ def test_composition_guess(scene):
     assert guess_composition(swir.astype(np.float32))[0] == "swir"
     real_tc = np.zeros_like(tc) + np.array([175, 150, 115], np.uint8)  # suelo ocre típico del True Color
     assert guess_composition(real_tc.astype(np.float32))[0] == "truecolor"
+
+
+# ---------------------------------------------------------- bajo el humo
+
+def test_burned_under_smoke_is_recovered_separately(tmp_path):
+    swir, tc, truth = make_scene(smoke=True, isolated_hot=False)
+    an = _run(tmp_path, swir, tc)
+    us = an.burn.under_smoke
+    gt = truth["burned_under_smoke"]
+    assert us is not None and us.any(), "No se ha estimado nada bajo el humo"
+    assert (us & gt).sum() / gt.sum() > 0.5, "Recupera poco del quemado oculto"
+    # No debe invadir la vegetación bajo el humo
+    assert (us & truth["veg_under_smoke"]).sum() / max(us.sum(), 1) < 0.15
+    # Es una categoría aparte: no se mezcla con el confirmado
+    assert not (us & an.burn.burned).any()
+
+
+def test_under_smoke_is_included_only_in_upper_range(tmp_path):
+    swir, tc, _ = make_scene(smoke=True, isolated_hot=False)
+    an = _run(tmp_path, swir, tc, geo=GeoRef(pixel_size_m=20))
+    a = an.report["area_quemada"]
+    assert a["hectareas_bajo_humo_probable"] > 0
+    assert a["hectareas_rango"][1] == pytest.approx(a["hectareas"] + a["hectareas_bajo_humo_probable"], abs=0.2)
+    kinds = {f["properties"]["kind"] for f in an.geojson["features"]}
+    assert "area_quemada_probable_bajo_humo" in kinds
+
+
+def test_smoke_over_vegetation_only_recovers_nothing(tmp_path):
+    """Humo sin quemado debajo: no debe inventar área quemada."""
+    swir, tc, truth = make_scene(smoke=True, isolated_hot=False)
+    # Mueve el humo lejos del quemado, sobre vegetación pura
+    h, w = swir.shape[:2]
+    swir2, tc2, _ = make_scene(smoke=False, isolated_hot=False)
+    yy, xx = np.mgrid[:h, :w]
+    sm = (yy - 330) ** 2 + (xx - 90) ** 2 <= 50 ** 2
+    swir2[sm] = (85, 172, 142)
+    tc2[sm] = (190, 195, 200)
+    an = _run(tmp_path, swir2, tc2)
+    assert not an.burn.under_smoke[sm].any()
+
+
+def test_smoke_recovery_can_be_disabled(tmp_path):
+    from firewatch.config import Params
+    swir, tc, _ = make_scene(smoke=True, isolated_hot=False)
+    p = Params(); p.burn.smoke_recovery = False
+    an = _run(tmp_path, swir, tc, params=p)
+    assert not an.burn.under_smoke.any()

@@ -27,7 +27,7 @@ def _disk(h, w, cy, cx, r):
 
 
 def make_scene(h=400, w=600, seed=0, burned=True, lake_inside=True, lake_outside=True,
-               edge_fire=True, isolated_hot=True, cloud=False, border_rows=0):
+               edge_fire=True, isolated_hot=True, cloud=False, border_rows=0, smoke=False):
     rng = np.random.default_rng(seed)
     swir = np.zeros((h, w, 3), np.float32) + VEG
     tc = np.zeros((h, w, 3), np.float32) + TC_VEG
@@ -73,6 +73,16 @@ def make_scene(h=400, w=600, seed=0, burned=True, lake_inside=True, lake_outside
         tc[c] = CLOUD
         truth["cloud"] = c
 
+    if smoke:
+        # Penacho sobre la mitad sur del quemado y parte de vegetación: en SWIR vira a cian y
+        # el quemado oculto conserva un B8A (verde) claramente más bajo que la vegetación.
+        sm = _disk(h, w, 300, 230, 75)
+        swir[sm & burn & ~water] = (90, 120, 128)
+        swir[sm & ~burn & ~water] = (85, 172, 142)
+        tc[sm & ~water] = (190, 195, 200)
+        truth["smoke"] = sm
+        truth["burned_under_smoke"] = sm & burn & ~water
+        truth["veg_under_smoke"] = sm & ~burn & ~water
     swir += rng.normal(0, 6, swir.shape)
     tc += rng.normal(0, 5, tc.shape)
     if border_rows:
