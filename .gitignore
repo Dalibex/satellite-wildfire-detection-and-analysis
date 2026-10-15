@@ -41,3 +41,7 @@ desktop.ini
 
 # --- Paquetes comprimidos ---
 *.zip
+*.pyc
+/firewatch/__pycache__
+/resultados
+/resultados
