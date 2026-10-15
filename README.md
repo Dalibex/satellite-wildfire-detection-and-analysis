@@ -94,9 +94,44 @@ Las sugerencias de composición son orientativas: revísalas antes de analizar.
 - `FIREWATCH_DATA_DIR`: carpeta de datos de la API, por defecto `out/web`.
 - `FIREWATCH_ORIGINS`: orígenes permitidos por la API, separados por comas. Por defecto admite los puertos locales 5173.
 
-Para Vercel, selecciona `frontend` como raíz del proyecto y configura `VITE_API_BASE_URL` con la URL HTTPS de la API desplegada.
-Autoriza ese origen web mediante `FIREWATCH_ORIGINS` en el servidor Python.
-El frontend y el motor se despliegan como servicios separados. El dominio se puede gestionar desde Cloudflare con los registros indicados por Vercel.
+#### Publicar todo en Vercel (sin almacenamiento)
+
+El `vercel.json` de la raíz despliega React y FastAPI mediante **Vercel Services** en un mismo dominio.
+La web usa `/api/` para comunicarse con Python. No necesita base de datos, Blob ni claves secretas.
+
+1. Sube los cambios del repositorio a GitHub.
+2. Importa el repositorio en Vercel con **Root Directory `./`** y **Application Preset Services**.
+   Si ya publicaste solo `frontend`, cambia la raíz en Settings → Build and Deployment y elimina las
+   sobrescrituras manuales de compilación; la configuración está en `vercel.json`.
+3. Deja `VITE_API_BASE_URL` sin definir (elimina la variable si apunta a otra API).
+   El comando de compilación del servicio frontend activa `VITE_STATELESS_API=true` automáticamente.
+4. Usa Node.js 22.x. La API usa el runtime Python de Vercel con un máximo de 300 segundos por petición
+   (requiere Fluid compute, activo por defecto en proyectos nuevos).
+5. Despliega y abre `https://TU-DOMINIO/api/health`: debe indicar `execution: "stateless"`.
+6. Abre la web, sube imágenes y prueba el análisis, las capas y las descargas.
+
+**Flujo:** la primera subida solo comprueba la imagen y devuelve una miniatura; el navegador conserva
+el archivo original en memoria. Al analizar envía las imágenes seleccionadas en una única petición.
+Python procesa en una carpeta temporal que se elimina al terminar, devuelve el resultado y las capas
+en una respuesta transmitida por fragmentos, y el navegador genera sus URLs locales.
+El resultado anterior se libera al iniciar otro análisis y todo se pierde al recargar la página.
+No hay historial, cola persistente ni archivos del usuario guardados en el servidor.
+
+**Límites de esta versión en Vercel:** máximo **4 MiB en total** entre las imágenes seleccionadas
+(para dejar margen al formulario dentro del límite de petición de 4,5 MB). No se reducen ni recomprimen
+las imágenes automáticamente. El análisis debe caber en la memoria y los 300 segundos disponibles;
+prueba con una resolución de 1000 o 1600 px si una escena es costosa. Durante la petición se muestra
+un estado de espera; las etapas detalladas siguen disponibles en el servidor local con cola.
+Los resultados viajan por streaming para admitir capas que superen el límite de respuesta almacenada
+en búfer. La viabilidad final de tiempo, memoria y tamaño del paquete se comprueba con el despliegue real.
+
+Para probar este flujo localmente, arranca `uvicorn firewatch.web.vercel_app:app --port 8000`
+y ejecuta Vite con `VITE_STATELESS_API=true` en `frontend/.env.local`.
+El proxy de Vite comunica ambos servicios sin necesidad de CORS.
+
+También puedes seguir publicando solo el frontend y una API local/externa: en ese caso la raíz es
+`frontend`, `VITE_STATELESS_API=false`, `VITE_API_BASE_URL` contiene la URL HTTPS de la API y
+`FIREWATCH_ORIGINS` debe autorizar el origen web en el servidor Python.
 
 ```bash
 npm run typecheck

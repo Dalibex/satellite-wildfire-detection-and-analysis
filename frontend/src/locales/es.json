@@ -1,4 +1,8 @@
 {
+  "hosting": {
+    "request_too_large": "Vercel admite hasta 4 MiB en total entre las imágenes de un análisis. Reduce su tamaño antes de enviarlas.",
+    "analysis_timeout": "El análisis superó el tiempo disponible. Prueba con una resolución de análisis menor."
+  },
   "notification": { "title": "Notificaciones" },
   "viewerControls": {
     "panHelp": "Amplía la imagen y arrastra con el ratón para desplazarla. También puedes usar las flechas del teclado, incluido el comparador.",
@@ -28,6 +32,7 @@
     "or": "o selecciónalas desde tu equipo",
     "choose": "Seleccionar imágenes",
     "formats": "PNG y JPG · hasta 100 MiB y 100 millones de píxeles por imagen",
+    "statelessFormats": "PNG y JPG · máximo 4 MiB en total entre las imágenes. El resultado se reemplaza al analizar de nuevo y se pierde al recargar.",
     "busy": "Cargando y comprobando imágenes…",
     "detected": "Sugerencia: {{kind}}",
     "kind": "Tipo de composición de {{name}}",

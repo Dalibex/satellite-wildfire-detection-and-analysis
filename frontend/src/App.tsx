@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Form, Spinner, Toast, ToastContainer } from 'react-bootstrap';
 import { ArrowDownToLine, ArrowRight, Check, CheckCircle2, CircleAlert, Flame, ImagePlus, Languages, Paintbrush, ScanLine, Sparkles } from 'lucide-react';
-import { ApiError, getAnalysis, startAnalysis, uploadImage } from './api';
+import { ApiError, clearResultAssets, getAnalysis, releaseUpload, startAnalysis, statelessApi, uploadImage } from './api';
 import { assignmentsValid, compositionNames, MAX_INPUT_IMAGES, stages } from './domain';
 import type { AnalysisOptions, Job, UploadedImage } from './domain';
 import UploadPanel from './components/UploadPanel';
@@ -41,7 +41,8 @@ export default function App() {
   function notify(key: string, isError = false) { setNotice({ id: Date.now(), key, error: isError }); setPaused(false); }
   function fail(cause: unknown) {
     if (cause instanceof DOMException && cause.name === 'AbortError') return;
-    const key = `errors.${cause instanceof ApiError ? cause.code : 'unknown'}`;
+    const code = cause instanceof ApiError ? cause.code : 'unknown';
+    const key = `${code === 'request_too_large' || code === 'analysis_timeout' ? 'hosting' : 'errors'}.${code}`;
     setError(i18n.exists(key) ? key : 'errors.unknown');
     notify(i18n.exists(key) ? key : 'errors.unknown', true);
   }
@@ -115,9 +116,15 @@ export default function App() {
     if (!valid || running || uploading) return;
     const controller = new AbortController(); startController.current = controller;
     setStarting(true); setError(null); setPollError(false);
+    if (statelessApi) { setJob(null); clearResultAssets(); }
     setSubmittedImages(images.map(image => ({ ...image })));
     setSubmittedOptions({ ...options });
-    try { setJob(await startAnalysis(images, options, controller.signal)); }
+    try {
+      const next = await startAnalysis(images, options, controller.signal);
+      setJob(next);
+      if (next.status === 'completed') notify('result.ready');
+      if (next.status === 'failed') fail(new ApiError(next.error ?? 'analysis_failed'));
+    }
     catch (cause) { fail(cause); }
     finally { setStarting(false); }
   }
@@ -139,7 +146,7 @@ export default function App() {
       <section className="hero" aria-labelledby="page-title"><div className="hero-copy"><h1 id="page-title">{t('intro.title')}</h1><p>{t('intro.body')}</p></div><div className="hero-mark" aria-hidden="true"><ScanLine size={116} strokeWidth={0.65} /><span className="hero-cross">＋</span></div></section>
       <ol className="workflow" aria-label={t('app.title')}><li className={images.length ? 'complete' : 'current'}><span>{images.length ? <Check size={16} aria-hidden="true" /> : '01'}</span><ImagePlus size={17} aria-hidden="true" />{t('intro.step1')}</li><li className={running ? 'current' : job?.status === 'completed' ? 'complete' : ''}><span>02</span><Sparkles size={17} aria-hidden="true" />{t('intro.step2')}</li><li className={job?.status === 'completed' ? 'current' : ''}><span>03</span><ArrowDownToLine size={17} aria-hidden="true" />{t('intro.step3')}</li></ol>
       <div className={`workspace ${job?.status === 'completed' ? 'has-results' : ''}`}>
-        <div className="preparation-column"><UploadPanel images={images} uploading={uploading} running={running} options={options} onFiles={files => { void addFiles(files); }} onAssign={(id, assignment) => setImages(current => current.map(image => image.id === id ? { ...image, assignment, assignmentSource: 'manual' } : image))} onRemove={id => setImages(current => current.filter(image => image.id !== id))} onOptions={setOptions} />
+        <div className="preparation-column"><UploadPanel images={images} uploading={uploading} running={running} options={options} onFiles={files => { void addFiles(files); }} onAssign={(id, assignment) => setImages(current => current.map(image => image.id === id ? { ...image, assignment, assignmentSource: 'manual' } : image))} onRemove={id => { releaseUpload(id); setImages(current => current.filter(image => image.id !== id)); }} onOptions={setOptions} />
           <div className="analyze-action"><Button size="lg" className="analyze-button" disabled={!valid || running || uploading} aria-describedby="analysis-help" onClick={() => { void analyze(); }}>{running ? <Spinner as="span" size="sm" aria-hidden="true" /> : <Sparkles size={18} aria-hidden="true" />}{t(running ? 'settings.running' : job ? 'settings.again' : 'settings.analyze')}<ArrowRight size={19} aria-hidden="true" /></Button><p id="analysis-help" className={`small ${!valid && images.length ? 'validation-note' : 'muted'}`}>{!valid ? t(needsType ? 'upload.needsType' : noImages ? 'upload.missing' : 'upload.duplicate') : t('settings.imageOnly')}</p></div>
           {error && <div className="alert alert-danger persistent-error"><strong>{t('errors.heading')}</strong><p className="mb-0 mt-1">{t(error)}</p>
             {submittedImages.length > 0 && job?.status === 'failed' && (error === 'errors.analysis_failed' || error === 'errors.invalid_response') && <details className="request-details"><summary>{t('diagnostics.title')}</summary><dl>

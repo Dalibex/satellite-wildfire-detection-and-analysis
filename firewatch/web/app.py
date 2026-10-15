@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Callable, Literal
 from uuid import uuid4
 
 import numpy as np
@@ -99,22 +99,9 @@ class ImageService:
         """Runs CPU work outside the HTTP event loop and records failures."""
         self._update(job_id, status="running", stage="loading")
         try:
-            params = Params()
-            params.burn.smoke_recovery = options.smoke_recovery
-            if options.sensitivity == "conservative":
-                params.burn.hyst_high, params.burn.hyst_low = 0.58, 0.38
-            elif options.sensitivity == "sensitive":
-                params.burn.hyst_high, params.burn.hyst_low = 0.44, 0.25
-            analysis = analyze(
-                swir_path=paths[0], truecolor_path=paths[1], reference_path=paths[2],
-                params=params, max_side=options.max_side, auto_assign=False,
-                on_progress=lambda stage: self._update(job_id, stage=stage),
-            )
-            self._update(job_id, stage="exports")
             directory = self.directory / job_id
             directory.mkdir()
-            result = build_assets(analysis, directory)
-            result["options"] = options.model_dump(exclude={"swir", "truecolor", "wildfire"})
+            result = run_analysis(options, paths, directory, lambda stage: self._update(job_id, stage=stage))
             result["inputs"] = {
                 kind: self.uploads[upload_id][0].model_dump()
                 for kind in ("swir", "truecolor", "wildfire")
@@ -124,6 +111,26 @@ class ImageService:
         except Exception:
             LOG.exception("Analysis %s failed", job_id)
             self._update(job_id, status="failed", stage="failed", error="analysis_failed")
+
+
+def run_analysis(options: AnalysisRequest, paths: list[Path | None], directory: Path,
+                 on_progress: Callable[[str], None] | None = None) -> dict:
+    """Runs the same engine and exports for local queues and request-scoped hosting."""
+    params = Params()
+    params.burn.smoke_recovery = options.smoke_recovery
+    if options.sensitivity == "conservative":
+        params.burn.hyst_high, params.burn.hyst_low = 0.58, 0.38
+    elif options.sensitivity == "sensitive":
+        params.burn.hyst_high, params.burn.hyst_low = 0.44, 0.25
+    analysis = analyze(
+        swir_path=paths[0], truecolor_path=paths[1], reference_path=paths[2],
+        params=params, max_side=options.max_side, auto_assign=False, on_progress=on_progress,
+    )
+    if on_progress:
+        on_progress("exports")
+    result = build_assets(analysis, directory)
+    result["options"] = options.model_dump(exclude={"swir", "truecolor", "wildfire"})
+    return result
 
 
 def _inspect_image(path: Path, preview: Path) -> tuple[int, int, Kind]:

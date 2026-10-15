@@ -1,4 +1,8 @@
 {
+  "hosting": {
+    "request_too_large": "Vercel accepts up to 4 MiB combined per analysis. Reduce image sizes before submitting them.",
+    "analysis_timeout": "The analysis exceeded the available time. Try a lower analysis resolution."
+  },
   "notification": { "title": "Notifications" },
   "viewerControls": {
     "panHelp": "Zoom in and drag with the mouse to pan. You can also use arrow keys, including on the comparison slider.",
@@ -28,6 +32,7 @@
     "or": "or select them from your device",
     "choose": "Select images",
     "formats": "PNG and JPG · up to 100 MiB and 100 million pixels per image",
+    "statelessFormats": "PNG and JPG · maximum 4 MiB combined. Results are replaced on the next analysis and lost on reload.",
     "busy": "Uploading and checking images…",
     "detected": "Suggestion: {{kind}}",
     "kind": "Composition type for {{name}}",

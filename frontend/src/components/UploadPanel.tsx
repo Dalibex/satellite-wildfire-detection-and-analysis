@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Form, Spinner } from 'react-bootstrap';
 import { Check, FileImage, ScanLine, Tag, Trash2, UploadCloud } from 'lucide-react';
-import { apiUrl } from '../api';
+import { apiUrl, statelessApi } from '../api';
 import { compositionNames, MAX_INPUT_IMAGES } from '../domain';
 import type { AnalysisOptions, Composition, UploadedImage } from '../domain';
 
@@ -41,7 +41,7 @@ export default function UploadPanel({ images, uploading, running, options, onFil
       <Button variant="outline-primary" disabled={disabled || images.length >= MAX_INPUT_IMAGES} aria-describedby="upload-limits" onClick={() => input.current?.click()}>
         {uploading ? <Spinner as="span" size="sm" aria-hidden="true" /> : <span aria-hidden="true">＋</span>} {t('upload.choose')}
       </Button>
-      <small className="muted d-block mt-3" id="upload-limits">{t('upload.formats')}<br />{t('upload.limit', { max: MAX_INPUT_IMAGES })}</small>
+      <small className="muted d-block mt-3" id="upload-limits">{t(statelessApi ? 'upload.statelessFormats' : 'upload.formats')}<br />{t('upload.limit', { max: MAX_INPUT_IMAGES })}</small>
     </div>
     <p className="small muted mt-3">{t('upload.guessHelp')}</p>
     {uploading && <p role="status" className="small"><Spinner as="span" size="sm" aria-hidden="true" /> {t('upload.busy')}</p>}

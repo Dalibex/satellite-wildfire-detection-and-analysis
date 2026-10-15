@@ -1,0 +1,29 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "api": {
+      "root": ".",
+      "runtime": "python",
+      "framework": "fastapi",
+      "entrypoint": "firewatch.web.vercel_app:app",
+      "installCommand": "pip install -r requirements-web.txt",
+      "functions": {
+        "firewatch/web/vercel_app.py": {
+          "maxDuration": 300,
+          "excludeFiles": "{.venv/**,.git/**,.dist/**,frontend/**,tests/**,images/**,out/**,resultados/**}"
+        }
+      }
+    },
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite",
+      "installCommand": "npm ci",
+      "buildCommand": "VITE_STATELESS_API=true npm run build",
+      "outputDirectory": "dist"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "api" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ]
+}

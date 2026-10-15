@@ -1,5 +1,6 @@
 """Creates reproducible browser-test inputs and serves the real local API."""
 from pathlib import Path
+import os
 import sys
 
 from PIL import Image
@@ -20,4 +21,8 @@ if __name__ == "__main__":
     Image.fromarray(tc).save(target / "truecolor.png")
     clear, _, _ = make_scene(burned=False, edge_fire=False, isolated_hot=False)
     Image.fromarray(clear).save(target / "clear.png")
-    uvicorn.run(create_app(target / "jobs"), host="127.0.0.1", port=8001, log_level="warning")
+    if os.environ.get("FIREWATCH_STATELESS") == "1":
+        from firewatch.web.vercel_app import app
+    else:
+        app = create_app(target / "jobs")
+    uvicorn.run(app, host="127.0.0.1", port=8001, log_level="warning")
