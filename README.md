@@ -7,7 +7,7 @@ quemada** (reto básico) y **detecta los focos de fuego activo** (reto avanzado)
 con el perímetro y los focos dibujados. No entrena ningún modelo: usa reglas basadas en la física de la banda
 SWIR, con umbrales relativos a cada escena para generalizar a imágenes nuevas.
 
-**Estado: motor de análisis por línea de comandos (sin interfaz web todavía).**
+**Estado: motor de análisis por línea de comandos y aplicación web local con React.**
 
 ## Qué hace
 
@@ -29,6 +29,80 @@ pip install -r requirements.txt
 ```
 
 ## Uso
+
+### Aplicación web local
+
+La interfaz usa React, TypeScript y Bootstrap. El análisis se ejecuta en una API Python local.
+Trabaja con imágenes y medidas en píxeles. Incluye:
+
+- Español e inglés (`frontend/src/locales/es.json` y `en.json`), con preferencia guardada.
+- Tema claro, oscuro, automático y alto contraste.
+- Carga por botón o arrastre, sugerencia del tipo de composición y corrección manual.
+- Progreso por etapas reales, avisos accesibles y navegación por teclado.
+- Capas independientes, opacidad, zoom y comparador original/resultado.
+- Simulación visual aproximada de protanopia, deuteranopia y tritanopia.
+- Métricas, tabla de focos aceptados y descartados, y descripción determinista.
+- PNG con leyenda, informe PDF etiquetado, JSON, CSV, TXT y máscaras binarias.
+
+Requiere Python 3.10+ y Node.js 22.12+ (preferentemente una versión LTS).
+
+**Terminal 1, desde la raíz del repositorio (PowerShell):**
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt
+.\.venv\Scripts\python.exe -B -m uvicorn firewatch.web.app:app --host 127.0.0.1 --port 8000
+```
+
+En Linux/macOS, usa `.venv/bin/python` en lugar de `.\.venv\Scripts\python.exe`.
+Si todavía no existe el entorno, créalo con `python -m venv .venv`.
+
+**Terminal 2:**
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Abre **http://127.0.0.1:5173**. La documentación de la API está en **http://127.0.0.1:8000/docs**.
+Sube una composición SWIR y, si está disponible, True Color de la misma escena.
+Las sugerencias de composición son orientativas: revísalas antes de analizar.
+
+#### Comportamiento de la versión web
+
+- Acepta PNG/JPG de hasta 100 MiB y 100 millones de píxeles por archivo.
+- Los archivos y resultados se guardan en `out/web/`. Cada análisis usa una carpeta distinta.
+- La cola ejecuta un análisis cada vez. Sus referencias viven en memoria: al reiniciar la API, vuelve a subir las imágenes.
+- Las bases, máscaras y coordenadas de focos usan la resolución de análisis, con un lado mayor máximo de 2500 px.
+- El frente mostrado son sectores estimados del borde próximos a focos aceptados, no una línea de avance medida.
+- El comparador muestra la imagen original y sus capas de análisis. No compara fechas diferentes.
+- La simulación de daltonismo solo afecta a la vista previa. Las descargas conservan la paleta Okabe-Ito.
+- El PNG usa las capas visibles. JSON y PDF conservan las métricas del análisis completo.
+- El PDF incorpora idioma, estructura de lectura, fuentes incrustadas y texto alternativo para la imagen.
+  Los focos aparecen como una lista textual etiquetada. La tabla interactiva tiene su alternativa HTML accesible.
+
+#### Configuración y publicación del frontend
+
+`frontend/.env.example` contiene las opciones disponibles. Usa `frontend/.env.local` para ajustes locales.
+
+- `VITE_API_BASE_URL`: origen de la API. Vacío usa el proxy local de Vite.
+- `API_PROXY_TARGET`: destino del proxy de desarrollo, por defecto `http://127.0.0.1:8000`.
+- `FIREWATCH_DATA_DIR`: carpeta de datos de la API, por defecto `out/web`.
+- `FIREWATCH_ORIGINS`: orígenes permitidos por la API, separados por comas. Por defecto admite los puertos locales 5173.
+
+Para Vercel, selecciona `frontend` como raíz del proyecto y configura `VITE_API_BASE_URL` con la URL HTTPS de la API desplegada.
+Autoriza ese origen web mediante `FIREWATCH_ORIGINS` en el servidor Python.
+El frontend y el motor se despliegan como servicios separados. El dominio se puede gestionar desde Cloudflare con los registros indicados por Vercel.
+
+```bash
+npm run typecheck
+npm run build
+```
+
+`npm run preview` permite revisar la compilación. El proxy pertenece al servidor de desarrollo:
+para probar la compilación local, define la URL de la API y autoriza el origen del servidor de vista previa antes de compilar.
+
+### Línea de comandos
 
 ```bash
 python -m firewatch --swir images/avila/swir.jpg --truecolor images/avila/truecolor.jpg --out resultados/avila
@@ -87,7 +161,7 @@ pip install -r requirements.txt   # incluye pytest
 python -m pytest -q
 ```
 
-26 tests sobre escenas sintéticas con verdad conocida. Entre ellos:
+Pruebas sobre escenas sintéticas con verdad conocida. Entre ellas:
 
 - un lago y un río fuera del incendio **nunca** se marcan como quemados;
 - un lago dentro del incendio queda dentro del perímetro pero **no** suma superficie;
@@ -98,6 +172,26 @@ python -m pytest -q
 - el quemado bajo el humo se recupera como categoría aparte y no inventa área si bajo el humo solo hay vegetación;
 - los fragmentos de humo pequeños o lejanos se marcan como baja confianza;
 - robustez frente a brillo ±20 %, compresión JPEG, reescalado ×0,5, marcos de captura y True Color de tamaño ligeramente distinto.
+
+Las pruebas de la API requieren `requirements-web.txt` y usan el motor real con archivos temporales:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m pytest -q
+.\.venv\Scripts\python.exe -B -m pytest -q tests/test_web.py
+```
+
+Las pruebas del navegador arrancan una API y Vite en los puertos 8001 y 5174.
+Generan escenas reproducibles en `out/browser-tests/`, sin depender de imágenes privadas.
+Desde `frontend/`:
+
+```bash
+npx playwright install chromium
+npm test
+```
+
+`FIREWATCH_PYTHON` permite seleccionar otro intérprete para estas pruebas. Por defecto usan la `.venv` de la raíz.
+Cubren carga real, errores, capas, comparador por teclado, exportaciones, cambio de idioma, temas y tamaños móviles.
+Las comprobaciones automáticas de accesibilidad usan axe. Los PDF se comprueban para idioma, etiquetas y fuentes incrustadas.
 
 ## Cómo funciona
 
@@ -151,6 +245,8 @@ firewatch/
   render.py       imagen anotada (Okabe-Ito, tramas, formas) y panel de diagnóstico
   pipeline.py     orquestación, informe y descripción textual
   cli.py          línea de comandos
+  web/            API local y capas independientes en coordenadas de imagen
+frontend/         React, idiomas, visor, exportaciones y pruebas de navegador
 tests/            escenas sintéticas y tests
 images/           (no versionada) imágenes de entrada
 resultados/       (no versionada) salidas generadas
@@ -176,5 +272,4 @@ resultados/       (no versionada) salidas generadas
 1. Ajustar umbrales con las escenas reales del reto (Ávila, Niebla).
 2. Trazar el frente activo como línea y calcular su longitud.
 3. Admitir bandas crudas (GeoTIFF) para usar índices espectrales reales.
-4. Interfaz web accesible (WCAG 2.2): subida de imágenes, capas conmutables, vista True Color/SWIR/Wildfire
-   y sliders de sensibilidad.
+4. Ampliar la validación de accesibilidad con lectores de pantalla y escenas reales en la interfaz web.

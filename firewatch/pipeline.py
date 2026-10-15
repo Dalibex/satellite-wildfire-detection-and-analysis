@@ -5,6 +5,7 @@ import json
 import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from collections.abc import Callable
 
 import numpy as np
 from PIL import Image
@@ -39,11 +40,14 @@ class Analysis:
 
 
 def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params | None = None,
-            geo: GeoRef | None = None, max_side: int | None = 2500) -> Analysis:
+            geo: GeoRef | None = None, max_side: int | None = 2500, *,
+            on_progress: Callable[[str], None] | None = None) -> Analysis:
     """max_side: lado mayor máximo (px) con el que se analiza. Las imágenes más grandes se reducen
     (la superficie se corrige con el factor de reducción). None = resolución original."""
     params = params or Params()
     geo = geo or GeoRef()
+    progress = on_progress or (lambda _stage: None)
+    progress("loading")
 
     swir, transp, (ow, oh) = load_rgb_scaled(swir_path, max_side=max_side)
     shape = swir.shape[:2]
@@ -71,6 +75,7 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
         comp_info["wildfire"] = {"detectado": k3, **m3}
 
     # --- 1. Vetos -------------------------------------------------------
+    progress("masks")
     water = water_mask(swir, params.water, tc=tc, valid=valid)
     cloud = cloud_mask(swir, params.cloud, valid=valid)
     smoke_tc = smoke_mask_tc(tc, params.smoke, valid=valid) if tc is not None else None
@@ -78,6 +83,7 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
     smoke = smoke & ~water & ~cloud
 
     # --- 2. Área quemada (reto básico) ---------------------------------
+    progress("burned")
     score = burn_score(swir, valid & ~cloud, params.burn, tc=tc, smoke_tc=smoke_tc)
     burn = segment_burned(score, valid & ~cloud, water, params.burn)
     # Humo: solo el de confianza alta alimenta el resto del análisis; el suelto se marca aparte.
@@ -86,12 +92,14 @@ def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params |
                         if params.burn.smoke_recovery else np.zeros(shape, dtype=bool))
 
     # --- 3. Fuego activo (reto avanzado) --------------------------------
+    progress("fire")
     extra = None
     if wf is not None:
         extra, _levels = wildfire_hot_pixels(wf, valid, tc)
     fire = detect_fire(swir, valid, cloud, burn.footprint, smoke, params.fire, extra_candidates=extra)
 
     # --- 4. Métricas e informe ------------------------------------------
+    progress("metrics")
     polys = mask_polygons(burn.footprint)
     report = _build_report(shape, valid, water, smoke, cloud, burn, fire, polys, geo, comp_info,
                            params, bool(tc is not None), bool(wf is not None),
