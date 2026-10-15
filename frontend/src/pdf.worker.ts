@@ -6,7 +6,7 @@ self.onmessage = (event: MessageEvent<PdfPayload>) => {
   try {
     const doc = new PDFDocument({
       size: 'A4', margin: 48, tagged: true, pdfVersion: '1.7', displayTitle: true,
-      lang: data.language, info: { Title: data.title, Author: 'Firewatch', Subject: data.description },
+      lang: data.language, info: { Title: data.title, Author: 'FireSentinel', Subject: data.description },
     });
     const chunks: Uint8Array[] = [];
     doc.on('data', (chunk: Uint8Array) => chunks.push(chunk));

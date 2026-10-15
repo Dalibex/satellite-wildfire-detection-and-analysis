@@ -1,96 +1,84 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from 'react-bootstrap';
-import { Download, FileJson, FileText, ImageDown, Sheet, LoaderCircle } from 'lucide-react';
-import regularFontUrl from '@fontsource/noto-sans/files/noto-sans-latin-400-normal.woff?url';
-import boldFontUrl from '@fontsource/noto-sans/files/noto-sans-latin-700-normal.woff?url';
-import { assetUrl } from '../api';
+import { Button, Form } from 'react-bootstrap';
+import { Archive, Download, FileJson, FileText, ImageDown, Languages, LoaderCircle, Sheet } from 'lucide-react';
 import { layerKeys } from '../domain';
-import type { AnalysisResult, Composition, LayerKey, LayerVisibility } from '../domain';
-import { canvasBlob, composeResult, createPdf, downloadBlob, hotspotCsv } from '../exports';
+import type { AnalysisResult, Composition, LayerVisibility } from '../domain';
+import { fetchResource, generateExport } from '../export-resources';
+import type { ExportFormat, ExportLanguage } from '../export-resources';
+import { downloadBlob } from '../exports';
 
 interface Props {
   jobId: string; result: AnalysisResult; base: Composition; visible: LayerVisibility;
-  opacity: number; description: string; notify: (key: string, error?: boolean) => void;
+  opacity: number; notify: (key: string, error?: boolean) => void;
 }
 
-export default function ExportPanel({ jobId, result, base, visible, opacity, description, notify }: Props) {
+export default function ExportPanel({ jobId, result, base, visible, opacity, notify }: Props) {
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
+  const [chosenLanguage, setChosenLanguage] = useState<ExportLanguage | null>(null);
+  const language = chosenLanguage ?? (i18n.resolvedLanguage === 'en' ? 'en' : 'es');
   const controller = useRef<AbortController | null>(null);
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => () => { controller.current?.abort(); controller.current = null; }, []);
 
-  async function save(format: string) {
+  async function save(format: ExportFormat, mask?: string) {
     if (busy) return;
     const request = new AbortController(); controller.current = request;
     setBusy(true);
     try {
-      let blob: Blob;
-      let extension = format;
-      if (format === 'csv') blob = new Blob([hotspotCsv(result.report, t)], { type: 'text/csv;charset=utf-8' });
-      else if (format === 'json') blob = new Blob([JSON.stringify({ ...result.report, options: result.options, language: i18n.language, description }, null, 2)], { type: 'application/json' });
-      else if (format === 'txt') blob = new Blob([description + '\n\n' + result.report.notes.map(note => t(`notes.${note}`)).join('\n')], { type: 'text/plain;charset=utf-8' });
-      else if (format.startsWith('mask-')) {
-        const response = await fetch(assetUrl(jobId, format), { signal: request.signal });
-        if (!response.ok) throw new Error('mask_failed');
-        blob = await response.blob(); extension = 'png';
-      } else {
-        const canvas = await composeResult(jobId, result, base, visible, opacity, t, request.signal);
-        if (format === 'png') blob = await canvasBlob(canvas);
-        else {
-          const nf = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 });
-          const report = result.report;
-          const fonts = await Promise.all([regularFontUrl, boldFontUrl].map(async url => {
-            const response = await fetch(url, { signal: request.signal });
-            if (!response.ok) throw new Error('font_failed');
-            return response.arrayBuffer();
-          }));
-          blob = await createPdf({
-            language: i18n.language, title: t('export.pdfTitle'),
-            generated: t('export.date', { date: new Intl.DateTimeFormat(i18n.language, { dateStyle: 'long', timeStyle: 'short' }).format(new Date()) }),
-            descriptionTitle: t('description.title'), description, metricsTitle: t('metrics.title'),
-            metrics: [
-              `${t('metrics.burned')}: ${nf.format(report.burned_pixels)} px (${nf.format(report.burned_percent)}%).`,
-              `${t('metrics.range')}: ${nf.format(report.strict_pixels)}–${nf.format(report.burned_pixels + report.probable_pixels)} px.`,
-              `${t('metrics.perimeter')}: ${nf.format(report.perimeter_pixels)} px.`,
-              `${t('metrics.water')}: ${nf.format(report.water_inside_pixels)} px.`,
-              t('metrics.islands', { count: report.islands }), t('result.resolution', report),
-            ],
-            notesTitle: t('notes.title'), notes: report.notes.map(note => t(`notes.${note}`)),
-            hotspotsTitle: t('hotspots.title'), noHotspots: t('hotspots.empty'),
-            hotspots: report.hotspots.map(hotspot => [
-              `#${hotspot.id}`, `${t('hotspots.position')}: ${hotspot.centroid_xy.map(value => nf.format(value)).join(' / ')}`,
-              `${t('hotspots.confidence')}: ${t(`hotspots.${hotspot.confidence}`)}`,
-              `${t('hotspots.intensity')}: ${t(`hotspots.${hotspot.intensity}`)}`,
-              t(`hotspots.${hotspot.location}`), `${nf.format(hotspot.n_pixels)} px`,
-              hotspot.reasons.map(reason => t(`reasons.${reason}`)).join(', '),
-            ].join(' · ')),
-            imageTitle: t('export.pdfImage'), imageAlt: description,
-            layerCaption: `${t('export.visibleLayers')}: ${layerKeys.filter(key => visible[key]).map(key => t(`layers.${key}`)).join(', ') || t('export.noLayers')}.`,
-            footer: t('export.resolutionNote'), image: canvas.toDataURL('image/png'),
-            regularFont: fonts[0]!, boldFont: fonts[1]!,
-          }, request.signal);
-        }
-      }
+      const blob = mask
+        ? await fetchResource(jobId, mask, request.signal)
+        : await generateExport({ jobId, result, base, visible, opacity, language }, format, request.signal);
       if (!request.signal.aborted) {
-        downloadBlob(blob, `firewatch-${format.startsWith('mask-') ? format.replace('.png', '') : 'result'}-${i18n.language}.${extension}`);
+        const stem = mask ? mask.replace('.png', '') : format === 'zip' ? 'resources' : 'result';
+        downloadBlob(blob, `firesentinel-${stem}-${language}.${format}`);
         notify('export.ready');
       }
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) { console.error(error); notify('errors.export_failed', true); }
-    } finally { if (!request.signal.aborted) setBusy(false); }
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        request.abort();
+        console.error(error);
+        notify('errors.export_failed', true);
+      }
+    } finally {
+      if (controller.current === request) { controller.current = null; setBusy(false); }
+    }
   }
 
   const exports = [
     { key: 'png', label: 'png', icon: ImageDown }, { key: 'pdf', label: 'pdf', icon: FileText },
-    { key: 'json', label: 'json', icon: FileJson }, { key: 'csv', label: 'csv', icon: Sheet }, { key: 'txt', label: 'text', icon: FileText },
-  ];
-  return <section className="surface export-panel" aria-labelledby="export-title"><div className="section-heading"><h3 id="export-title"><Download size={21} aria-hidden="true" />{t('export.title')}</h3></div><p className="small muted">{t('export.help')}</p>
+    { key: 'json', label: 'json', icon: FileJson }, { key: 'csv', label: 'csv', icon: Sheet },
+    { key: 'txt', label: 'text', icon: FileText },
+  ] as const;
+
+  return <section className="surface export-panel" aria-labelledby="export-title">
+    <div className="section-heading export-heading">
+      <h3 id="export-title"><Download size={21} aria-hidden="true" />{t('export.title')}</h3>
+      <Form.Group controlId="export-language" className="export-language">
+        <Form.Label><Languages size={15} aria-hidden="true" />{t('export.language')}</Form.Label>
+        <Form.Select size="sm" value={language} disabled={busy} onChange={event => {
+          if (event.target.value === 'es' || event.target.value === 'en') setChosenLanguage(event.target.value);
+        }}><option value="es">Español</option><option value="en">English</option></Form.Select>
+      </Form.Group>
+    </div>
+    <p className="small muted">{t('export.help')}</p>
+    <div className="archive-download">
+      <Button variant="primary" disabled={busy} aria-describedby="archive-help" onClick={() => { void save('zip'); }}>
+        <Archive size={19} aria-hidden="true" />{t('export.zip')}
+      </Button>
+      <p id="archive-help" className="small muted">{t('export.zipHelp')}</p>
+    </div>
     <div className="export-buttons">{exports.map(({ key, label, icon: Icon }) => <Button key={key} variant="outline-secondary" disabled={busy} onClick={() => { void save(key); }}><Icon size={17} aria-hidden="true" />{t(`export.${label}`)}</Button>)}</div>
     <p role="status" aria-live="polite" className="small export-status">{busy && <><LoaderCircle size={15} className="spin" aria-hidden="true" /> {t('export.busy')}</>}</p>
-    <details><summary>{t('export.masks')}</summary><div className="mask-downloads">{result.files.filter(file => file.startsWith('mask-')).map(file => {
-      const key = file.replace('mask-', '').replace('.png', '') as LayerKey;
-      return <Button variant="link" disabled={busy} key={file} onClick={() => { void save(file); }}><Download size={14} aria-hidden="true" />{t('export.mask', { name: t(`layers.${key}`) })}</Button>;
-    })}</div></details>
+    <details className="mask-details"><summary>{t('export.masks')}</summary>
+      <div id="masks-help" className="mask-explanation small muted">
+        <p>{t('export.masksHelp')}</p><p>{t('export.masksValues')}</p><p>{t('export.masksResolution')}</p>
+      </div>
+      <div className="mask-downloads">{layerKeys.filter(key => result.files.includes(`mask-${key}.png`)).map(key =>
+        <Button variant="link" disabled={busy} key={key} aria-describedby="masks-help" onClick={() => { void save('png', `mask-${key}.png`); }}>
+          <Download size={14} aria-hidden="true" />{t('export.mask', { name: t(`layers.${key}`) })}
+        </Button>,
+      )}</div>
+    </details>
   </section>;
 }

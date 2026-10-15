@@ -22,8 +22,10 @@ export default function UploadPanel({ images, uploading, running, options, onFil
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const disabled = uploading || running;
-  const swir = images.find(image => image.assignment === 'swir');
-  const mismatched = swir && images.some(image => image.assignment !== 'unused' && Math.abs(image.width / image.height - swir.width / swir.height) / (swir.width / swir.height) > 0.02);
+  const reference = images.find(image => image.assignment === 'swir')
+    ?? images.find(image => image.assignment === 'truecolor')
+    ?? images.find(image => image.assignment !== 'unused');
+  const mismatched = reference && images.some(image => image.assignment !== 'unused' && Math.abs(image.width / image.height - reference.width / reference.height) / (reference.width / reference.height) > 0.02);
   return <section className="surface preparation" aria-labelledby="upload-title">
     <div className="section-heading"><div><p className="eyebrow">{t('upload.step')}</p><h2 id="upload-title">{t('upload.title')}</h2></div><span className="section-icon"><FileImage aria-hidden="true" size={23} /></span></div>
     <p className="muted">{t('upload.help')}</p>
@@ -60,8 +62,8 @@ export default function UploadPanel({ images, uploading, running, options, onFil
     </ul>}
     {mismatched && <p className="inline-note warning-note">{t('upload.mismatch')}</p>}
     <div className="composition-guide">
-      <p><strong>SWIR</strong><span className="tiny-badge">{t('upload.required')}</span><small>{t('upload.swirHelp')}</small></p>
-      <p><strong>True Color</strong><span className="tiny-badge neutral">{t('upload.recommended')}</span><small>{t('upload.truecolorHelp')}</small></p>
+      <p><strong>SWIR</strong><span className="tiny-badge">{t('upload.recommended')}</span><small>{t('upload.swirHelp')}</small></p>
+      <p><strong>True Color</strong><span className="tiny-badge">{t('upload.recommended')}</span><small>{t('upload.truecolorHelp')}</small></p>
       <p><strong>Wildfire</strong><span className="tiny-badge neutral">{t('upload.optional')}</span><small>{t('upload.wildfireHelp')}</small></p>
     </div>
     <details className="settings-panel"><summary>{t('settings.title')}</summary>
@@ -71,13 +73,6 @@ export default function UploadPanel({ images, uploading, running, options, onFil
             {[1000, 1600, 2500].map(value => <option key={value} value={value}>{value} px</option>)}
           </Form.Select><Form.Text id="resolution-help">{t('settings.resolutionHelp')}</Form.Text>
         </Form.Group>
-        <Form.Group controlId="sensitivity" className="mb-3"><Form.Label>{t('settings.sensitivity')}</Form.Label>
-          <Form.Select value={options.sensitivity} aria-describedby="sensitivity-help" onChange={event => { const value = event.target.value; if (value === 'conservative' || value === 'balanced' || value === 'sensitive') onOptions({ ...options, sensitivity: value }); }}>
-            {(['conservative', 'balanced', 'sensitive'] as const).map(value => <option key={value} value={value}>{t(`settings.${value}`)}</option>)}
-          </Form.Select><Form.Text id="sensitivity-help">{t('settings.sensitivityHelp')}</Form.Text>
-        </Form.Group>
-        <Form.Check id="smoke-recovery" label={t('settings.recovery')} checked={options.smoke_recovery} aria-describedby="recovery-help" onChange={event => onOptions({ ...options, smoke_recovery: event.target.checked })} />
-        <Form.Text id="recovery-help">{t('settings.recoveryHelp')}</Form.Text>
       </fieldset>
     </details>
   </section>;

@@ -15,10 +15,10 @@ void i18n.use(initReactI18next).init({
 });
 i18n.on('languageChanged', (language: string) => {
   document.documentElement.lang = language;
-  document.title = `Firewatch · ${i18n.t('app.title')}`;
+  document.title = `FireSentinel · ${i18n.t('app.title')}`;
   try { localStorage.setItem('firewatch-language', language); } catch { /* Language still works without storage. */ }
 });
 document.documentElement.lang = i18n.language;
-document.title = `Firewatch · ${i18n.t('app.title')}`;
+document.title = `FireSentinel · ${i18n.t('app.title')}`;
 
 export default i18n;

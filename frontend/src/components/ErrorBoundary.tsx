@@ -7,7 +7,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, { 
   static getDerivedStateFromError(): { failed: boolean } { return { failed: true }; }
   override componentDidCatch(error: Error, info: ErrorInfo): void { console.error(error, info.componentStack); }
   override render(): ReactNode {
-    if (this.state.failed) return <main className="container py-5"><h1>Firewatch</h1><p role="alert">{i18n.t('errors.unknown')}</p><button className="btn btn-primary" onClick={() => location.reload()}>{i18n.t('progress.retry')}</button></main>;
+    if (this.state.failed) return <main className="container py-5"><h1>FireSentinel</h1><p role="alert">{i18n.t('errors.unknown')}</p><button className="btn btn-primary" onClick={() => location.reload()}>{i18n.t('progress.retry')}</button></main>;
     return this.props.children;
   }
 }

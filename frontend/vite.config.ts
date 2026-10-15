@@ -5,7 +5,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
-    optimizeDeps: { include: ['pdfkit/js/pdfkit.standalone.js'] },
+    optimizeDeps: { include: ['pdfkit/js/pdfkit.standalone.js', 'fflate'] },
     server: {
       port: 5173,
       strictPort: true,

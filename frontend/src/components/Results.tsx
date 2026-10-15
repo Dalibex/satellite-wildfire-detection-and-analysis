@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from 'react-bootstrap';
-import { CheckCircle2, Copy, Crosshair, Info, ScanLine, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Copy, Crosshair, Info, ScanLine, ShieldCheck } from 'lucide-react';
 import { defaultLayers } from '../domain';
 import type { AnalysisResult, Composition, Hotspot } from '../domain';
 import Viewer from './Viewer';
@@ -12,7 +12,7 @@ interface Props { result: AnalysisResult; jobId: string; notify: (key: string, e
 
 export default function Results({ result, jobId, notify }: Props) {
   const { t, i18n } = useTranslation();
-  const [base, setBase] = useState<Composition>(result.bases.truecolor ? 'truecolor' : 'swir');
+  const [base, setBase] = useState<Composition>(result.bases.truecolor ? 'truecolor' : result.bases.swir ? 'swir' : 'wildfire');
   const [visible, setVisible] = useState({ ...defaultLayers });
   const [opacity, setOpacity] = useState(1);
   const [selected, setSelected] = useState<Hotspot | null>(null);
@@ -50,11 +50,11 @@ export default function Results({ result, jobId, notify }: Props) {
     <section className="surface description-panel" aria-labelledby="description-title"><div className="section-heading"><h3 id="description-title"><ShieldCheck size={20} aria-hidden="true" />{t('description.title')}</h3><Button variant="outline-secondary" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(description); notify('description.copied'); } catch { notify('errors.clipboard', true); } }}><Copy size={15} aria-hidden="true" /> {t('description.copy')}</Button></div><p id="result-description">{description}</p>
       {report.notes.length > 0 && <details className="analysis-notes" open><summary><Info size={16} aria-hidden="true" /> {t('notes.title')}</summary><ul>{report.notes.map(note => <li key={note}>{t(`notes.${note}`)}</li>)}</ul></details>}
     </section>
-    <section className="surface hotspots-panel" aria-labelledby="hotspots-title"><h3 id="hotspots-title">{t('hotspots.title')} <span className="count-badge">{nf.format(report.hotspots.length)}</span></h3><p className="small muted">{t('hotspots.help')}</p>
+    <section className="surface hotspots-panel" aria-labelledby="hotspots-title"><details className="hotspots-disclosure"><summary><h3 id="hotspots-title"><Crosshair size={20} aria-hidden="true" />{t('hotspots.title')} <span className="count-badge">{nf.format(report.hotspots.length)}</span></h3><ChevronDown size={20} className="disclosure-chevron" aria-hidden="true" /></summary><div className="hotspots-content"><p className="small muted">{t('hotspots.help')}</p>
       <p role="status" className="visually-hidden">{selected ? t('result.selected', { id: selected.id }) : ''}</p>
       {report.hotspots.length ? hotspotTable(report.hotspots) : <p className="empty-state"><Crosshair size={22} aria-hidden="true" />{t('hotspots.empty')}</p>}
       {report.rejected_hotspots.length > 0 && <details className="mt-3"><summary>{t('hotspots.rejected')} ({nf.format(report.rejected_hotspots.length)})</summary>{hotspotTable(report.rejected_hotspots, true)}</details>}
-    </section>
-    <ExportPanel jobId={jobId} result={result} base={base} visible={visible} opacity={opacity} description={description} notify={notify} />
+    </div></details></section>
+    <ExportPanel jobId={jobId} result={result} base={base} visible={visible} opacity={opacity} notify={notify} />
   </section>;
 }

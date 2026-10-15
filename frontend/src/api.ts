@@ -38,7 +38,7 @@ export function startAnalysis(images: UploadedImage[], options: AnalysisOptions,
   const assignments = Object.fromEntries(images.filter(image => image.assignment !== 'unused').map(image => [image.assignment, image.id]));
   return request('/api/analyses', jobSchema, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...assignments, ...options }), signal,
+    body: JSON.stringify({ ...assignments, max_side: options.max_side, smoke_recovery: true }), signal,
   });
 }
 export function getAnalysis(id: string, signal: AbortSignal): Promise<Job> {

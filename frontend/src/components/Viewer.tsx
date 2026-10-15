@@ -58,7 +58,7 @@ export default function Viewer({ result, jobId, base, onBase, visible, onVisible
       <figure className="image-figure">
         <div ref={viewport} className="image-viewport" tabIndex={0} role="region" aria-label={t('result.viewer')} aria-describedby="viewer-help result-description">
           <div className="image-stack" style={{ width: `${zoom * 100}%`, filter: simulation === 'normal' ? undefined : `url(#${simulation})` }}>
-            <img ref={image} className="base-image" src={assetUrl(jobId, result.bases[base] ?? result.bases.swir ?? '')} width={report.width} height={report.height}
+            <img ref={image} className="base-image" src={assetUrl(jobId, result.bases[base] ?? result.bases.swir ?? result.bases.truecolor ?? result.bases.wildfire ?? '')} width={report.width} height={report.height}
               alt={t('description.alt', { pixels: nf.format(report.burned_pixels), count: report.hotspots.length })} onError={() => setImageError(true)} />
             <div className="overlay-stack" style={{ opacity, clipPath: compare ? `inset(0 0 0 ${divider}%)` : undefined }}>
               {layerKeys.filter(key => visible[key]).map(key => <img key={key} className="image-layer" src={assetUrl(jobId, result.layers[key].file)} alt="" aria-hidden="true" onError={() => setImageError(true)} />)}

@@ -46,7 +46,7 @@ async function loadImage(url: string, signal: AbortSignal): Promise<HTMLImageEle
 export async function composeResult(jobId: string, result: AnalysisResult, base: Composition,
   visible: LayerVisibility, opacity: number, t: TFunction, signal: AbortSignal): Promise<HTMLCanvasElement> {
   const chosen = layerKeys.filter(key => visible[key]);
-  const files = [result.bases[base] ?? result.bases.swir ?? '', ...chosen.map(key => result.layers[key].file)];
+  const files = [result.bases[base] ?? result.bases.swir ?? result.bases.truecolor ?? result.bases.wildfire ?? '', ...chosen.map(key => result.layers[key].file)];
   const images = await Promise.all(files.map(filename => loadImage(assetUrl(jobId, filename), signal)));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(900, Math.min(result.report.width, 1800));
@@ -59,7 +59,7 @@ export async function composeResult(jobId: string, result: AnalysisResult, base:
   images.forEach((image, index) => { context.globalAlpha = index === 0 ? 1 : opacity; context.drawImage(image, 0, 0, canvas.width, height); });
   context.globalAlpha = 1;
   context.fillStyle = '#123e34'; context.font = 'bold 24px sans-serif';
-  context.fillText('firewatch · ' + t('result.title'), 24, height + 36);
+  context.fillText('FireSentinel · ' + t('result.title'), 24, height + 36);
   context.fillStyle = '#343c3a'; context.font = '16px sans-serif';
   context.fillText(t('result.resolution', result.report), 24, height + 64);
   if (!chosen.length) context.fillText(t('export.noLayers'), 24, height + 100);

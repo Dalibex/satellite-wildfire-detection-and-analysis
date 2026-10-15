@@ -41,9 +41,9 @@ export const reportSchema = z.object({
 export type Report = z.infer<typeof reportSchema>;
 export const optionsSchema = z.object({
   max_side: z.union([z.literal(1000), z.literal(1600), z.literal(2500)]),
-  sensitivity: z.enum(['conservative', 'balanced', 'sensitive']), smoke_recovery: z.boolean(),
+  smoke_recovery: z.boolean(),
 });
-export type AnalysisOptions = z.infer<typeof optionsSchema>;
+export type AnalysisOptions = Pick<z.infer<typeof optionsSchema>, 'max_side'>;
 const layerSchema = z.object({ file: z.string(), count: z.number() });
 export const resultSchema = z.object({
   report: reportSchema,
@@ -61,6 +61,6 @@ export const stages = ['queued', 'loading', 'masks', 'burned', 'fire', 'metrics'
 
 export function assignmentsValid(images: UploadedImage[]): boolean {
   const active = images.filter(image => image.assignment !== 'unused');
-  return active.some(image => image.assignment === 'swir')
+  return active.length > 0
     && new Set(active.map(image => image.assignment)).size === active.length;
 }
