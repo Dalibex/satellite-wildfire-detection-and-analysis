@@ -45,21 +45,11 @@ class Analysis:
     mode: str = "swir+truecolor"           # entradas usadas: swir+truecolor | solo_swir | solo_truecolor
 
 
-<<<<<<< Updated upstream
-def analyze(swir_path, truecolor_path=None, wildfire_path=None, params: Params | None = None,
-            geo: GeoRef | None = None, max_side: int | None = 2500, *,
-            on_progress: Callable[[str], None] | None = None) -> Analysis:
-    """max_side: lado mayor máximo (px) con el que se analiza. Las imágenes más grandes se reducen
-    (la superficie se corrige con el factor de reducción). None = resolución original."""
-    params = params or Params()
-    geo = geo or GeoRef()
-    progress = on_progress or (lambda _stage: None)
-    progress("loading")
-=======
 def analyze(swir_path, truecolor_path=None, params: Params | None = None,
             geo: GeoRef | None = None, max_side: int | None = 2500, auto_assign: bool = True,
-            extra_paths=(), reference_path=None) -> Analysis:
-    """Analiza una escena con SWIR (+ True Color opcional). La detección NO usa la Wildfire.
+            extra_paths=(), reference_path=None, *,
+            on_progress: Callable[[str], None] | None = None) -> Analysis:
+    """Analiza una escena con SWIR y/o True Color. La detección NO usa la Wildfire.
 
     reference_path: composición Wildfire de la misma escena, usada únicamente DESPUÉS de detectar,
     para validar los focos (precisión / recall). Si se encuentra entre `extra_paths`, se toma también
@@ -68,6 +58,8 @@ def analyze(swir_path, truecolor_path=None, params: Params | None = None,
     (la superficie se corrige con el factor de reducción). None = resolución original."""
     params = params or Params()
     geo = geo or GeoRef()
+    progress = on_progress or (lambda _stage: None)
+    progress("loading")
     assign_warn = []
     if reference_path:
         from .composition import classify_file
@@ -86,7 +78,6 @@ def analyze(swir_path, truecolor_path=None, params: Params | None = None,
                          "Sirve cualquiera de las dos (o ambas, que da el mejor resultado). La imagen Wildfire "
                          "solo sirve para validar (--validar-con), no para detectar.")
     mode = "swir+truecolor" if (swir_path and truecolor_path) else ("solo_swir" if swir_path else "solo_truecolor")
->>>>>>> Stashed changes
 
     # La imagen principal fija el tamaño de trabajo: la SWIR si hay, si no el True Color
     primary_path = swir_path or truecolor_path
@@ -114,39 +105,16 @@ def analyze(swir_path, truecolor_path=None, params: Params | None = None,
         k3, m3 = guess_composition(wf)
         comp_info["wildfire"] = {"detectado": k3, **m3}
 
-<<<<<<< Updated upstream
-    # --- 1. Vetos -------------------------------------------------------
-    progress("masks")
-    water = water_mask(swir, params.water, tc=tc, valid=valid)
-    cloud = cloud_mask(swir, params.cloud, valid=valid)
-    smoke_tc = smoke_mask_tc(tc, params.smoke, valid=valid) if tc is not None else None
-    smoke = smoke_tc if smoke_tc is not None else smoke_mask_swir(swir, params.smoke, valid=valid)
-    smoke = smoke & ~water & ~cloud
-
-    # --- 2. Área quemada (reto básico) ---------------------------------
-    progress("burned")
-    score = burn_score(swir, valid & ~cloud, params.burn, tc=tc, smoke_tc=smoke_tc)
-    burn = segment_burned(score, valid & ~cloud, water, params.burn)
-    # Humo: solo el de confianza alta alimenta el resto del análisis; el suelto se marca aparte.
-    smoke, smoke_low, n_smoke_low = classify_smoke(smoke, burn.footprint, params.smoke)
-    burn.under_smoke = (recover_under_smoke(swir, smoke, water, valid & ~cloud, burn.footprint, params.burn)
-                        if params.burn.smoke_recovery else np.zeros(shape, dtype=bool))
-
-    # --- 3. Fuego activo (reto avanzado) --------------------------------
-    progress("fire")
-    extra = None
-    if wf is not None:
-        extra, _levels = wildfire_hot_pixels(wf, valid, tc)
-    fire = detect_fire(swir, valid, cloud, burn.footprint, smoke, params.fire, extra_candidates=extra)
-=======
     if swir is not None:
         # --- 1. Vetos ---------------------------------------------------
+        progress("masks")
         water = water_mask(swir, params.water, tc=tc, valid=valid)
         cloud = cloud_mask(swir, params.cloud, valid=valid)
         smoke_tc = smoke_mask_tc(tc, params.smoke, valid=valid) if (tc is not None) else None
         smoke = smoke_tc if smoke_tc is not None else smoke_mask_swir(swir, params.smoke, valid=valid)
         smoke = smoke & ~water & ~cloud
         # --- 2. Área quemada (reto básico) -------------------------------
+        progress("burned")
         score = burn_score(swir, valid & ~cloud, params.burn, tc=tc, smoke_tc=smoke_tc)
         burn = segment_burned(score, valid & ~cloud, water, params.burn)
         # Humo: solo el de confianza alta alimenta el resto del análisis; el suelto se marca aparte.
@@ -156,9 +124,11 @@ def analyze(swir_path, truecolor_path=None, params: Params | None = None,
         fire_src, source = swir, "swir"
     else:
         # Solo True Color: el humo y la nube se confunden (ambos blancos); no se distingue la nube.
+        progress("masks")
         water = water_mask_tc(tc, params.water, valid=valid)
         cloud = np.zeros(shape, dtype=bool)
         smoke = smoke_mask_tc(tc, params.smoke, valid=valid) & ~water
+        progress("burned")
         score = burn_score_tc(tc, valid, params.burn, smoke=smoke)
         burn = segment_burned(score, valid, water, params.burn)
         smoke, smoke_low, n_smoke_low = classify_smoke(smoke, burn.footprint, params.smoke)
@@ -166,12 +136,11 @@ def analyze(swir_path, truecolor_path=None, params: Params | None = None,
         fire_src, source = tc, "truecolor"
 
     # --- 3. Fuego activo (reto avanzado) --------------------------------
+    progress("fire")
     fire = detect_fire(fire_src, valid, cloud, burn.footprint, smoke, params.fire, source=source)
     # Frente activo: perímetro de la huella completa (confirmada + probable bajo humo)
     full_fp = burn.footprint | (burn.under_smoke if burn.under_smoke is not None else False)
     front = compute_front(full_fp, fire.accepted, burn.burned, smoke, params.fire, geo.pixel_size_m)
->>>>>>> Stashed changes
-
     # --- 4. Métricas e informe ------------------------------------------
     progress("metrics")
     polys = mask_polygons(burn.footprint)
