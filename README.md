@@ -27,8 +27,12 @@ SWIR, con umbrales relativos a cada escena para generalizar a imágenes nuevas.
 Requiere Python 3.10 o superior. No necesita GPU.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate          # Windows (PowerShell): .venv\Scripts\activate
+### Windows (PowerShell) ###
+# Crear venv
+py -3 -m venv .venv
+# Una vez creado, activarlo
+.\.venv\Scripts\Activate.ps1
+# Instalar todas las librerías y dependencias
 pip install -r requirements.txt
 ```
 
@@ -53,8 +57,12 @@ Requiere Python 3.10+ y Node.js 22.12+ (preferentemente una versión LTS).
 **Terminal 1, desde la raíz del repositorio (PowerShell):**
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt
-.\.venv\Scripts\python.exe -B -m uvicorn firewatch.web.app:app --host 127.0.0.1 --port 8000
+# En caso de seguir dentro de un .venv
+deactivate
+# Instalar dependencias para ejecutar frontend
+-m pip install -r requirements-web.txt
+# Lanzar servicio backend
+python -B -m uvicorn firewatch.web.app:app --host 127.0.0.1 --port 8000
 ```
 
 En Linux/macOS, usa `.venv/bin/python` en lugar de `.\.venv\Scripts\python.exe`.
@@ -63,8 +71,11 @@ Si todavía no existe el entorno, créalo con `python -m venv .venv`.
 **Terminal 2:**
 
 ```bash
+# Cambiar directorio para evitar errores de missing modules
 cd frontend
+# Instala dependencias necesarias
 npm ci
+# Lanzar servicio frontend
 npm run dev
 ```
 
