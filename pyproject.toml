@@ -1,0 +1,10 @@
+[project]
+name = "firewatch"
+version = "0.1.0"
+description = "Detección de áreas quemadas y focos activos en imágenes Sentinel-2 (III Malackathon 2026, reto INDRA)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+filterwarnings = ["ignore::UserWarning"]

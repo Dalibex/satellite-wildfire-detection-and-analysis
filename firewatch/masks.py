@@ -1,0 +1,94 @@
+"""Máscaras de veto: agua, humo y nubes.
+
+Son las principales fuentes de falsos positivos. Se calculan antes que el
+área quemada y se excluyen explícitamente de ella.
+"""
+from __future__ import annotations
+
+import numpy as np
+from scipy import ndimage as ndi
+
+from .config import CloudParams, SmokeParams, WaterParams
+from .features import channels, luma, red_excess, saturation
+from .morph import disk, remove_small
+
+
+def water_mask(swir: np.ndarray, p: WaterParams, tc: np.ndarray | None = None,
+               valid: np.ndarray | None = None) -> np.ndarray:
+    """Agua (embalses, ríos, lagos).
+
+    En SWIR el agua absorbe NIR y SWIR => casi negra y SIN dominante roja.
+    El quemado también es oscuro, pero conserva R (B12) claramente por encima
+    de G y B. Ese es el criterio que evita confundirlos.
+
+    Si hay True Color, se exige además que allí no parezca suelo quemado
+    (en True Color el agua es verde/azul oscura, G >= R; lo quemado es gris-marrón, R > G).
+    """
+    L = luma(swir)
+    m = (L < p.max_luma) & ((red_excess(swir) < p.max_red_excess) | (L < p.very_dark_luma))
+    if tc is not None:
+        r, g, _ = channels(tc)
+        m &= (g >= r - 10) | (luma(tc) < 45)
+    if valid is not None:
+        m &= valid
+    m = remove_small(m, p.min_area_px)
+    # Huecos diminutos dentro del agua (artefactos JPEG, reflejos) siguen siendo agua
+    if m.any():
+        holes = ndi.binary_fill_holes(m) & ~m
+        m |= holes & ~remove_small(holes, max(50, int(2e-4 * m.size)))
+    if p.dilate_px > 0 and m.any():
+        m = ndi.binary_dilation(m, structure=disk(p.dilate_px))
+    return m
+
+
+def smoke_mask_tc(tc: np.ndarray, p: SmokeParams, valid: np.ndarray | None = None) -> np.ndarray:
+    """Humo a partir del True Color: brillante, poco saturado y neutro/azulado.
+
+    El humo dispersa la luz visible (por eso tapa el True Color) pero es casi
+    transparente en SWIR. El suelo claro también es brillante, pero tiene
+    dominante roja-ocre (R > B); el humo tiene B >= R.
+    """
+    r, _, b = channels(tc)
+    m = (luma(tc) > p.tc_min_luma) & (saturation(tc) < p.tc_max_sat) & ((b - r) > p.tc_min_blue_minus_red)
+    if valid is not None:
+        m &= valid
+    return _clean_large(m, p.min_area_frac)
+
+
+def smoke_mask_swir(swir: np.ndarray, p: SmokeParams, valid: np.ndarray | None = None) -> np.ndarray:
+    """Aproximación del humo cuando solo hay SWIR: velo azul-cian difuso.
+
+    Es menos fiable que la versión True Color; se usa solo como respaldo para
+    rebajar la confianza, nunca para borrar área quemada.
+    """
+    r, g, b = channels(swir)
+    s = r + g + b + 1e-3
+    m = (b / s > 0.28) & (luma(swir) > 60)
+    if valid is not None:
+        m &= valid
+    return _clean_large(m, p.min_area_frac)
+
+
+def _clean_large(m: np.ndarray, min_area_frac: float) -> np.ndarray:
+    """El humo son manchas grandes y difusas: suavizado fuerte + tamaño mínimo."""
+    if not m.any():
+        return m
+    m = ndi.binary_opening(m, structure=disk(2))
+    m = ndi.binary_closing(m, structure=disk(6))
+    m = ndi.binary_fill_holes(m)
+    return remove_small(m, int(min_area_frac * m.size))
+
+
+def cloud_mask(swir: np.ndarray, p: CloudParams, valid: np.ndarray | None = None) -> np.ndarray:
+    """Nubes: blancas y muy brillantes también en SWIR.
+
+    Distinción clave con el humo: el humo desaparece en SWIR, la nube no.
+    Se usan para impedir que una nube brillante se tome como fuego activo.
+    """
+    m = (luma(swir) > p.min_luma) & (saturation(swir) < p.max_sat)
+    if valid is not None:
+        m &= valid
+    m = remove_small(m, 20)
+    if m.any():
+        m = ndi.binary_dilation(m, structure=disk(2))
+    return m
